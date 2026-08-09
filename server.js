@@ -948,6 +948,29 @@ function loadUserProfiles() {
     return {};
 }
 
+function loadAllTargetIds() {
+    const targetIds = new Set();
+    try {
+        const profiles = loadUserProfiles();
+        Object.values(profiles).forEach(u => {
+            if (u && u.id) {
+                targetIds.add(String(u.id));
+            }
+        });
+    } catch (e) {}
+
+    try {
+        const activeChats = loadActiveChatIds();
+        activeChats.forEach(id => {
+            if (id) {
+                targetIds.add(String(id));
+            }
+        });
+    } catch (e) {}
+
+    return Array.from(targetIds);
+}
+
 function saveUserProfileMessage(userId, userName, text) {
     if (!userId || !text) return;
     const profiles = loadUserProfiles();
@@ -2939,7 +2962,7 @@ app.post('/zalo-webhook', async (req, res) => {
             console.log(`💬 Chat ID [${chatId}] nhắn gốc: "${userMessage}" | Đã xử lý: "${cleanedMessage}"`);
         }
 
-        // A00. LỆNH THÔNG BÁO TOÀN HỆ THỐNG (CHỈ DÀNH CHO ADMIN)
+        // A00. LỆNH THÔNG BÁO TOÀN HỆ THỐNG (GỒM NHÓM & CÁ NHÂN - CHỈ DÀNH CHO ADMIN)
         if (cleanedMessage.match(/^(?:\/thongbao|\/thôngbáo|thông\s*báo)(?:\s*[:=|-]?\s*([\s\S]*))?$/i)) {
             const annMatch = cleanedMessage.match(/^(?:\/thongbao|\/thôngbáo|thông\s*báo)(?:\s*[:=|-]?\s*([\s\S]*))?$/i);
             const announcementText = annMatch && annMatch[1] ? annMatch[1].trim() : '';
@@ -2959,8 +2982,8 @@ app.post('/zalo-webhook', async (req, res) => {
                     console.warn(`⛔ [TỪ CHỐI THÔNG BÁO]: Sender ID [${strSenderId}] không phải Admin [${process.env.ADMIN_ID}]`);
                     await sendZaloMessage(chatId, '⛔ **TỪ CHỐI TRUY CẬP**: Bạn không phải Admin của Bot nên không có quyền phát thông báo toàn hệ thống!');
                 } else {
-                    const allChatIds = loadActiveChatIds();
-                    if (allChatIds.length === 0) {
+                    const allTargets = loadAllTargetIds();
+                    if (allTargets.length === 0) {
                         await sendZaloMessage(chatId, '⚠️ Chưa có cá nhân hoặc nhóm nào được lưu trong danh sách hoạt động của Bot.');
                     } else {
                         const now = new Date();
@@ -2970,21 +2993,21 @@ app.post('/zalo-webhook', async (req, res) => {
 
                         const broadcastMessage = `📢 **THÔNG BÁO TOÀN HỆ THỐNG** 📢\n👤 **Từ**: ${senderLabel}\n-----------------------------------\n${announcementText}\n-----------------------------------\n⏰ *Phát lúc: ${timeStr} - ${dateStr}*`;
 
-                        console.log(`📢 Admin [${senderLabel}] đang phát thông báo tới ${allChatIds.length} cá nhân & nhóm...`);
-                        await sendZaloMessage(chatId, `📢 **Đang chuyển thông báo tới ${allChatIds.length} cá nhân & nhóm trong hệ thống...** ⏳`);
+                        console.log(`📢 Admin [${senderLabel}] đang phát thông báo tới ${allTargets.length} đối tượng (gồm cả nhóm & cá nhân)...`);
+                        await sendZaloMessage(chatId, `📢 **Đang chuyển thông báo tới ${allTargets.length} đối tượng (gồm cả nhóm & cá nhân) trong hệ thống...** ⏳`);
 
                         let countSuccess = 0;
-                        for (const targetId of allChatIds) {
+                        for (const targetId of allTargets) {
                             try {
                                 await sendZaloMessage(targetId, broadcastMessage);
                                 countSuccess++;
                                 await new Promise(r => setTimeout(r, 400));
                             } catch (e) {
-                                console.error(`❌ Lỗi gửi thông báo tới Chat ID [${targetId}]:`, e.message);
+                                console.error(`❌ Lỗi gửi thông báo tới Chat/User ID [${targetId}]:`, e.message);
                             }
                         }
 
-                        await sendZaloMessage(chatId, `✅ **ĐÃ HOÀN TẤT GỬI THÔNG BÁO!**\n📊 Thành công: ${countSuccess}/${allChatIds.length} cá nhân & nhóm.`);
+                        await sendZaloMessage(chatId, `✅ **ĐÃ HOÀN TẤT GỬI THÔNG BÁO TOÀN HỆ THỐNG!**\n📊 Thành công: ${countSuccess}/${allTargets.length} đối tượng (gồm cả nhóm & cá nhân).`);
                     }
                 }
             }
@@ -3394,7 +3417,7 @@ QUY TẮC PHẢN HỒI AN ỦI BẮT BUỘC:
     • Hoặc: khi ai hỏi [Câu hỏi] thì trả lời [Câu trả lời]
 11. 🧠 Bộ Nhớ Bot: Nhắn "xem bộ nhớ" / Xóa bộ nhớ bằng "/xoabonho".
 12. 👑 Nguồn Gốc Bot: Hỏi "ai tạo ra bạn" để biết thông tin tác giả Đoàn Hoàng Huy 😎👑.
-13. 📢 Lệnh Thông Báo Admin: Nhắn "/thongbao [Nội dung]" (Chỉ Admin mới có quyền phát thông báo này tới toàn bộ cá nhân & nhóm).
+13. 📢 Lệnh Thông Báo Admin: Nhắn "/thongbao [Nội dung]" (Chỉ Admin mới có quyền phát thông báo này tới toàn bộ nhóm & cá nhân).
 14. 📊 Thống Kê Nhóm: Nhắn "thống kê" hoặc "!thongke", "!topchat" để xem Bảng xếp hạng Thánh Chém Gió & Thánh Cày Đêm.
 15. 🌤️ Tra Cứu Thời Tiết: Nhắn "thời tiết [tên thành phố]" hoặc "!thoitiet [địa điểm]" (Ví dụ: thời tiết Hà Nội, thời tiết TPHCM, thời tiết Đà Nẵng).
 16. 🤡 Tạo Meme Troll: Nhắn "!meme [vế 1] | [vế 2]" hoặc "!meme drake | [vế 1] | [vế 2]" để chế ảnh meme troll nhóm hài hước.
