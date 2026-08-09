@@ -1,0 +1,26 @@
+# Node modules
+node_modules/
+
+# Environment variables & Secret keys (IMPORTANT: Never push to git)
+.env
+.env.local
+
+# Runtime databases & state files
+bot_state.json
+active_chats.json
+chat_history.json
+memory.json
+user_profiles.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# System & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.agents/
+scratch/
+
