@@ -8,6 +8,11 @@ const path = require('path');
 const app = express();
 app.use(express.json());
 
+// Endpoint cho UptimeRobot & Health Check
+app.get('/', (req, res) => {
+    res.status(200).send('🤖 Zalo Bot Server đang hoạt động 24/7!');
+});
+
 const BOT_TOKEN = process.env.BOT_TOKEN || '1035931458469721596:UuOSiQfushNpvMqaFVGXxAZDwbDvRvbSFlbACKFSGLQzqTBFgqXOuHeKwalJGpLO';
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'wBXNqKUATyqu0RtYt25i';
