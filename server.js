@@ -1866,7 +1866,10 @@ function extractSearchKeywordFromQuery(query) {
 async function searchGoogleLive(query) {
     if (!query || !query.trim()) return [];
     try {
-        const searchKeyword = extractSearchKeywordFromQuery(query);
+        let searchKeyword = extractSearchKeywordFromQuery(query);
+        if (/^(?:18\+|gợi\s*cảm|sexy|sensual|clip\s*18\+|video\s*18\+)$/i.test(searchKeyword)) {
+            searchKeyword = `${searchKeyword} phim bài viết tin tức`;
+        }
         console.log(`🌐 Đang Live Search Google: "${searchKeyword}"...`);
         
         const controller = new AbortController();
@@ -2051,7 +2054,7 @@ async function searchWikipedia(query) {
 async function searchDuckDuckGoWeb(query) {
     if (!query || !query.trim()) return [];
     try {
-        const searchKeyword = extractSearchKeywordFromQuery(query);
+        let searchKeyword = extractSearchKeywordFromQuery(query);
         console.log(`🔎 Đang tìm kiếm Web DuckDuckGo cho: "${searchKeyword}"...`);
 
         const controller = new AbortController();
@@ -2060,6 +2063,7 @@ async function searchDuckDuckGoWeb(query) {
         const params = new URLSearchParams();
         params.append('q', searchKeyword);
         params.append('kl', 'vn-vi');
+        params.append('kp', '-2'); // Off SafeSearch để tìm tất cả kết quả công khai trên Internet
 
         const res = await fetch(url, {
             method: 'POST',
