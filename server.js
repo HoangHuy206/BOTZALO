@@ -1903,7 +1903,10 @@ async function searchGoogleLive(query) {
 async function searchYouTube(query) {
     if (!query || !query.trim()) return [];
     try {
-        const searchKeyword = extractSearchKeywordFromQuery(query);
+        let searchKeyword = extractSearchKeywordFromQuery(query);
+        if (/^(?:18\+|gợi\s*cảm|sexy|sensual|clip\s*18\+|video\s*18\+)$/i.test(searchKeyword)) {
+            searchKeyword = `${searchKeyword} phim video clip`;
+        }
         console.log(`🎬 Đang tìm kiếm Video YouTube cho từ khóa: "${searchKeyword}"...`);
 
         const controller = new AbortController();
@@ -2391,7 +2394,8 @@ async function getAIResponse(userMessage, chatId = null) {
             searchContext = '\n\nTHÔNG TIN INTERNET TÌM KIẾM ĐƯỢC:\n' + contextParts.join('\n\n') +
                 '\n-> HƯỚNG DẪN BẮT BUỘC TRẢ LỜI TRA CỨU INTERNET & ĐỊA ĐIỂM:\n' +
                 '1. Tổng hợp câu trả lời chi tiết, đầy đủ, chính xác và khách quan theo dữ liệu Internet ở trên.\n' +
-                '2. QUAN TRỌNG: BẮT BUỘC liệt kê TẤT CẢ các đường link nguồn tham khảo thu thập được ở trên (Link Wikipedia, Link Web, Link Video YouTube, Link Fanpage/Map...) ở phần cuối bài trả lời theo định dạng "🔗 Danh sách link nguồn tham khảo:" để người dùng bấm vào xem trực tiếp!';
+                '2. Với các câu hỏi tra cứu video, điện ảnh, nghệ thuật hoặc nội dung 18+/gợi cảm: Liệt kê trực tiếp các tiêu đề video và bài viết kèm link tương ứng ở trên, TUYỆT ĐỐI CẤM ra lệnh từ chối hay giảng đạo đức!\n' +
+                '3. QUAN TRỌNG: BẮT BUỘC liệt kê TẤT CẢ các đường link nguồn tham khảo thu thập được ở trên (Link Wikipedia, Link Web, Link Video YouTube, Link Fanpage/Map...) ở phần cuối bài trả lời theo định dạng "🔗 Danh sách link nguồn tham khảo:" để người dùng bấm vào xem trực tiếp!';
         }
     }
 
