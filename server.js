@@ -2012,14 +2012,105 @@ async function searchPlacesAndStores(query) {
     return [];
 }
 
-// Hàm tổng hợp Live Search Google, Địa điểm / Shop & Video YouTube đồng thời
+// Hàm tìm kiếm bách khoa toàn thư Wikipedia
+async function searchWikipedia(query) {
+    if (!query || !query.trim()) return [];
+    try {
+        const searchKeyword = extractSearchKeywordFromQuery(query);
+        console.log(`📚 Đang tìm kiếm Wikipedia cho: "${searchKeyword}"...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const url = `https://vi.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchKeyword)}&format=json&utf8=1`;
+        const res = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+            const data = await res.json();
+            const items = data.query?.search || [];
+            const results = items.slice(0, 4).map(item => ({
+                title: item.title,
+                snippet: item.snippet ? item.snippet.replace(/<[^>]+>/g, '').trim() : '',
+                link: `https://vi.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`
+            }));
+            console.log(`📚 Wikipedia Search tìm thấy ${results.length} bài viết!`);
+            return results;
+        }
+    } catch (e) {
+        console.warn('⚠️ Lỗi Wikipedia Search (Bỏ qua):', e.message);
+    }
+    return [];
+}
+
+// Hàm tìm kiếm trang Web tổng hợp qua DuckDuckGo HTML/Lite
+async function searchDuckDuckGoWeb(query) {
+    if (!query || !query.trim()) return [];
+    try {
+        const searchKeyword = extractSearchKeywordFromQuery(query);
+        console.log(`🔎 Đang tìm kiếm Web DuckDuckGo cho: "${searchKeyword}"...`);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4500);
+        const url = 'https://lite.duckduckgo.com/lite/';
+        const params = new URLSearchParams();
+        params.append('q', searchKeyword);
+        params.append('kl', 'vn-vi');
+
+        const res = await fetch(url, {
+            method: 'POST',
+            body: params,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+            const html = await res.text();
+            const results = [];
+            const blocks = html.split('<td valign="top">');
+
+            for (let i = 1; i < blocks.length && results.length < 6; i++) {
+                const b = blocks[i];
+                const linkMatch = b.match(/<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/s);
+                const snippetMatch = b.match(/<td class='result-snippet'[^>]*>(.*?)<\/td>/s);
+
+                if (linkMatch) {
+                    let link = linkMatch[1];
+                    if (link.includes('uddg=')) {
+                        link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]);
+                    }
+                    const title = linkMatch[2].replace(/<[^>]+>/g, '').trim();
+                    const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+                    if (link && title && !link.includes('duckduckgo.com')) {
+                        results.push({ title, link, snippet });
+                    }
+                }
+            }
+            console.log(`🔎 DuckDuckGo Web Search tìm thấy ${results.length} trang web!`);
+            return results;
+        }
+    } catch (e) {
+        console.warn('⚠️ Lỗi DuckDuckGo Web Search (Bỏ qua):', e.message);
+    }
+    return [];
+}
+
+// Hàm tổng hợp Live Search Google, Web DuckDuckGo, Wikipedia, Địa điểm & Video YouTube đồng thời
 async function searchWebAndVideos(query) {
-    const [web, places, videos] = await Promise.all([
+    const [web, ddgWeb, wiki, places, videos] = await Promise.all([
         searchGoogleLive(query),
+        searchDuckDuckGoWeb(query),
+        searchWikipedia(query),
         searchPlacesAndStores(query),
         searchYouTube(query)
     ]);
-    return { web, places, videos };
+    return { web, ddgWeb, wiki, places, videos };
 }
 
 function cleanAIReply(reply) {
@@ -2268,35 +2359,39 @@ async function getAIResponse(userMessage, chatId = null) {
     const chatHistoryContext = chatId ? getChatHistoryContext(chatId) : '';
 
     // Tự động tìm kiếm web thực tế, địa điểm/quán/shop & video YouTube
-    const isSearchRequired = /(?:trường|đại\s*học|cao\s*đẳng|tuyển\s*sinh|điểm\s*chuẩn|học\s*phí|tài\s*liệu|giáo\s*trình|sách|khóa\s*học|nguồn\s*học|tìm\s*hiểu|tra\s*cứu|tìm\s*kiếm|thông\s*tin\s*về|link|bài\s*báo|video|clip|bài\s*giảng|hướng\s*dẫn|quán|cửa\s*hàng|shop|tiệm|nhà\s*hàng|quán\s*ăn|quán\s*áo|quần\s*áo|thời\s*trang|quán\s*game|khu\s*vui\s*chơi|rạp|phim|trung\s*tâm\s*thương\s*mại|tầng|aeon|vincom|lotte|bigc|go!|cinesphere|mùa|địa\s*chỉ|ở\s*đâu|địa\s*điểm|tìm\s*quán|tìm\s*shop|tìm\s*cửa\s*hàng|facebook|fanpage|fb\s*của|chủ\s*đầu\s*tư|ai\s*làm\s*ra|ai\s*xây|ai\s*mở|xây\s*năm|mở\s*cửa|\/search|\/timkiem|\/tailieu|\/video|\/quan|\/shop)/i.test(userMessage);
+    const isSearchRequired = /(?:trường|đại\s*học|cao\s*đẳng|tuyển\s*sinh|điểm\s*chuẩn|học\s*phí|tài\s*liệu|giáo\s*trình|sách|khóa\s*học|nguồn\s*học|tìm\s*hiểu|tra\s*cứu|tìm\s*kiếm|thông\s*tin\s*về|link|bài\s*báo|video|clip|bài\s*giảng|hướng\s*dẫn|quán|cửa\s*hàng|shop|tiệm|nhà\s*hàng|quán\s*ăn|quán\s*áo|quần\s*áo|thời\s*trang|quán\s*game|khu\s*vui\s*chơi|rạp|phim|trung\s*tâm\s*thương\s*mại|tầng|aeon|vincom|lotte|bigc|go!|cinesphere|mùa|địa\s*chỉ|ở\s*đâu|địa\s*điểm|tìm\s*quán|tìm\s*shop|tìm\s*cửa\s*hàng|facebook|fanpage|fb\s*của|chủ\s*đầu\s*tư|ai\s*làm\s*ra|ai\s*xây|ai\s*mở|xây\s*năm|mở\s*cửa|sự\s*kiện|tin\s*tức|mạng|nội\s*dung|nguồn|wikipedia|wiki|lịch\s*sử|định\s*nghĩa|khái\s*niệm|\/search|\/timkiem|!search|!timkiem|\/tailieu|\/video|\/quan|\/shop)/i.test(userMessage);
 
     let searchContext = '';
     if (isSearchRequired) {
-        const { web, places, videos } = await searchWebAndVideos(userMessage);
+        const { web, ddgWeb, wiki, places, videos } = await searchWebAndVideos(userMessage);
         let contextParts = [];
 
+        if (wiki && wiki.length > 0) {
+            contextParts.push('THÔNG TIN BÁCH KHOA TOÀN THƯ WIKIPEDIA:\n' +
+                wiki.slice(0, 5).map((w, i) => `${i + 1}. [${w.title}]\n   - Tóm tắt: ${w.snippet}\n   - Link: ${w.link}`).join('\n\n'));
+        }
+        if (ddgWeb && ddgWeb.length > 0) {
+            contextParts.push('KẾT QUẢ TÌM KIẾM TRÊN INTERNET (WEB SEARCH):\n' +
+                ddgWeb.slice(0, 8).map((r, i) => `${i + 1}. [${r.title}]\n   - Nội dung: ${r.snippet}\n   - Link: ${r.link}`).join('\n\n'));
+        }
         if (places && places.length > 0) {
             contextParts.push('THÔNG TIN ĐỊA ĐIỂM, QUÁN ĂN, SHOP, KHU VUI CHƠI & LINK FACEBOOK:\n' +
-                places.slice(0, 4).map((p, i) => `${i + 1}. [${p.title}]\n   - Mô tả / Vị trí / Tầng / TTTM: ${p.snippet}\n   - Link: ${p.link}`).join('\n\n'));
+                places.slice(0, 6).map((p, i) => `${i + 1}. [${p.title}]\n   - Mô tả / Vị trí / Tầng / TTTM: ${p.snippet}\n   - Link: ${p.link}`).join('\n\n'));
         }
         if (web && web.length > 0) {
-            contextParts.push('KẾT QUẢ TÌM KIẾM BỔ SUNG TRÊN GOOGLE:\n' +
-                web.slice(0, 3).map((r, i) => `${i + 1}. [${r.title}] - Link: ${r.link}`).join('\n'));
+            contextParts.push('TIN TỨC VÀ BÀI BÁO NỔI BẬT:\n' +
+                web.slice(0, 5).map((r, i) => `${i + 1}. [${r.title}] - Link: ${r.link}`).join('\n'));
         }
         if (videos && videos.length > 0) {
             contextParts.push('DANH SÁCH VIDEO LIÊN QUAN TRÊN YOUTUBE:\n' +
-                videos.slice(0, 2).map((v, i) => `${i + 1}. 🎬 [${v.title}] (${v.channel}) - Link: ${v.link}`).join('\n'));
+                videos.slice(0, 4).map((v, i) => `${i + 1}. 🎬 [${v.title}] (${v.channel}) - Link: ${v.link}`).join('\n'));
         }
 
         if (contextParts.length > 0) {
-            searchContext = '\n\nTHÔNG TIN ĐỊA ĐIỂM, SHOP, GOOGLE & VIDEO TÌM KIẾM ĐƯỢC:\n' + contextParts.join('\n\n') +
-                '\n-> HƯỚNG DẪN TRẢ LỜI TRA CỨU ĐỊA ĐIỂM / TTTM / SHOP / KHU VUI CHƠI / QUÁN ĂN / CỬA HÀNG:\n' +
-                '1. TUYỆT ĐỐI CẤM TRẢ LỜI CHUNG CHUNG SÁO RỖNG (như "khu vui chơi trong nhà", "khu chơi bóng", "quán ăn cho trẻ em").\n' +
-                '2. BẮT BUỘC LIỆT KÊ ĐÍCH DANH TÊN THƯƠNG HIỆU / GIAN HÀNG CỤ THỂ THỰC TẾ (Ví dụ: Jump Arena, Wolfoo City, tiNiWorld, Timezone, Kidzooona, Dream Games, CGV, Gogi House, Dookki, Haidilao, Kichi Kichi, Canifa, Uniqlo...).\n' +
-                '3. TRÌNH BÀY RÕ RÀNG:\n' +
-                '   - Liệt kê đích danh tên từng gian hàng / khu vui chơi / quán ăn / thương hiệu cụ thể.\n' +
-                '   - Kèm mô tả ngắn gọn (1 - 2 câu) về đặc điểm nổi bật, trò chơi/món ăn nổi tiếng hoặc vị trí tầng của gian hàng đó.\n' +
-                'Hiển thị trích dẫn link Facebook Fanpage / Website ở cuối nếu có!';
+            searchContext = '\n\nTHÔNG TIN INTERNET TÌM KIẾM ĐƯỢC:\n' + contextParts.join('\n\n') +
+                '\n-> HƯỚNG DẪN BẮT BUỘC TRẢ LỜI TRA CỨU INTERNET & ĐỊA ĐIỂM:\n' +
+                '1. Tổng hợp câu trả lời chi tiết, đầy đủ, chính xác và khách quan theo dữ liệu Internet ở trên.\n' +
+                '2. QUAN TRỌNG: BẮT BUỘC liệt kê TẤT CẢ các đường link nguồn tham khảo thu thập được ở trên (Link Wikipedia, Link Web, Link Video YouTube, Link Fanpage/Map...) ở phần cuối bài trả lời theo định dạng "🔗 Danh sách link nguồn tham khảo:" để người dùng bấm vào xem trực tiếp!';
         }
     }
 
@@ -3216,6 +3311,20 @@ app.post('/zalo-webhook', async (req, res) => {
             const statsReply = getGroupStats();
             await sendZaloMessage(chatId, statsReply);
         }
+        // C0.415. XỬ LÝ LỆNH TÌM KIẾM INTERNET ĐA NGUỒN (!timkiem, !search, /timkiem, /search, tìm kiếm [từ khóa])
+        else if (cleanedMessage.match(/^(?:!timkiem|!tìmkiếm|!search|\/timkiem|\/tìmkiếm|\/search|tìm\s*kiếm|tra\s*cứu\s*mạng|tìm\s*trên\s*mạng)\s*(.*)$/i)) {
+            const searchMatch = cleanedMessage.match(/^(?:!timkiem|!tìmkiếm|!search|\/timkiem|\/tìmkiếm|\/search|tìm\s*kiếm|tra\s*cứu\s*mạng|tìm\s*trên\s*mạng)\s*(.*)$/i);
+            const query = searchMatch && searchMatch[1] ? searchMatch[1].trim() : '';
+            if (!query) {
+                await sendZaloMessage(chatId, '🌐 **HƯỚNG DẪN TÌM KIẾM INTERNET** 🌐\n\n👉 Cú pháp: `!timkiem [từ khóa hoặc câu hỏi]`\n👉 Hoặc: `!search [nội dung]`\n(Ví dụ: `!timkiem Giá vàng hôm nay`, `!search Trí tuệ nhân tạo là gì`)');
+            } else {
+                console.log(`🌐 Nhận lệnh Tìm kiếm Internet cho [${chatId}]: "${query}"`);
+                sendTypingAction(chatId);
+                const searchPrompt = `Hãy tìm kiếm thông tin chi tiết trên Internet về: "${query}". Tổng hợp câu trả lời đầy đủ, chính xác, khách quan và trích dẫn các đường link nguồn tham khảo thu thập được ở cuối bài.`;
+                const searchReply = await getAIResponse(searchPrompt, chatId);
+                await sendZaloMessage(chatId, searchReply, null, incomingMsgId);
+            }
+        }
         // C0.42. XỬ LÝ LỆNH TRA CỨU THỜI TIẾT (!thoitiet [địa điểm], thời tiết [địa điểm])
         else if (cleanedMessage.match(/^(?:!thoitiet|!thờitiết|\/thoitiet|\/thờitiết|thời\s*tiết|dự\s*báo\s*thời\s*tiết)\s*(.*)$/i)) {
             const weatherMatch = cleanedMessage.match(/^(?:!thoitiet|!thờitiết|\/thoitiet|\/thờitiết|thời\s*tiết|dự\s*báo\s*thời\s*tiết)\s*(.*)$/i);
@@ -3426,7 +3535,8 @@ QUY TẮC PHẢN HỒI AN ỦI BẮT BUỘC:
 14. 📊 Thống Kê Nhóm: Nhắn "thống kê" hoặc "!thongke", "!topchat" để xem Bảng xếp hạng Thánh Chém Gió & Thánh Cày Đêm.
 15. 🌤️ Tra Cứu Thời Tiết: Nhắn "thời tiết [tên thành phố]" hoặc "!thoitiet [địa điểm]" (Ví dụ: thời tiết Hà Nội, thời tiết TPHCM, thời tiết Đà Nẵng).
 16. 🤡 Tạo Meme Troll: Nhắn "!meme [vế 1] | [vế 2]" hoặc "!meme drake | [vế 1] | [vế 2]" để chế ảnh meme troll nhóm hài hước.
-17. 🎭 Ghép Mặt (Tráo Mặt 2 Ảnh): Nhắn "!ghepmat" hoặc reply "!ghepmat" vào Ảnh 2 để tráo khuôn mặt từ Ảnh 1 đè mượt mà sang bối cảnh & thân thể Ảnh 2.`;
+17. 🎭 Ghép Mặt (Tráo Mặt 2 Ảnh): Nhắn "!ghepmat" hoặc reply "!ghepmat" vào Ảnh 2 để tráo khuôn mặt từ Ảnh 1 đè mượt mà sang bối cảnh & thân thể Ảnh 2.
+18. 🌐 Tìm Kiếm Internet: Nhắn "!timkiem [nội dung]" hoặc "!search [từ khóa]" để bot tra cứu thông tin tổng hợp đa nguồn từ internet (Wiki, Web, Tin tức, Video...).`;
             await sendZaloMessage(chatId, helpText);
         }
         // E. XỬ LÝ LỆNH ĐẾM / GHI SỐ TỰ ĐỘNG (Ví dụ: "đếm từ 1 đến 1000", "ghi từ 1 đến 1000", "viết từ 1 đến 1000")
