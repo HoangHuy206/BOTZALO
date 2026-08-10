@@ -2395,11 +2395,11 @@ async function getAIResponse(userMessage, chatId = null) {
         }
 
         if (contextParts.length > 0) {
-            searchContext = '\n\nTHÔNG TIN INTERNET TÌM KIẾM ĐƯỢC:\n' + contextParts.join('\n\n') +
+            searchContext = '\n\nTHÔNG TIN INTERNET THỰC TẾ TÌM KIẾM ĐƯỢC TỪ CÁC NGUỒN TẬP TRUNG:\n' + contextParts.join('\n\n') +
                 '\n-> HƯỚNG DẪN BẮT BUỘC TRẢ LỜI TRA CỨU INTERNET & ĐỊA ĐIỂM:\n' +
-                '1. Tổng hợp câu trả lời chi tiết, đầy đủ, chính xác và khách quan theo dữ liệu Internet ở trên.\n' +
-                '2. Với các câu hỏi tra cứu video, điện ảnh, nghệ thuật hoặc nội dung 18+/gợi cảm: Liệt kê trực tiếp các tiêu đề video và bài viết kèm link tương ứng ở trên, TUYỆT ĐỐI CẤM ra lệnh từ chối hay giảng đạo đức!\n' +
-                '3. QUAN TRỌNG: BẮT BUỘC liệt kê TẤT CẢ các đường link nguồn tham khảo thu thập được ở trên (Link Wikipedia, Link Web, Link Video YouTube, Link Fanpage/Map...) ở phần cuối bài trả lời theo định dạng "🔗 Danh sách link nguồn tham khảo:" để người dùng bấm vào xem trực tiếp!';
+                '1. Hệ thống đã chủ động tìm kiếm và cung cấp sẵn dữ liệu Internet ở trên cho bạn. TUYỆT ĐỐI KHÔNG ĐƯỢC trả lời "tôi không thể truy cập internet" hoặc "tôi không có khả năng truy cập web"!\n' +
+                '2. Trình bày đầy đủ nội dung bài viết/video/kết quả đã tìm thấy ở trên kèm các đường link dẫn trực tiếp tương ứng để người dùng tham khảo.\n' +
+                '3. QUAN TRỌNG: BẮT BUỘC liệt kê TẤT CẢ các đường link nguồn tham khảo thu thập được ở trên (Link Wikipedia, Link Web, Link Video, Link Fanpage/Map...) ở phần cuối bài trả lời theo định dạng "🔗 Danh sách link nguồn tham khảo:"!';
         }
     }
 
