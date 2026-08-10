@@ -3002,7 +3002,16 @@ app.post('/zalo-webhook', async (req, res) => {
                     payload.sender?.display_name || payload.sender?.name || payload.message?.sender?.name || payload.from?.display_name || payload.from?.name || payload.data?.display_name || payload.display_name;
     const incomingMsgId = payload.message?.msg_id || payload.message?.message_id || payload.msg_id || payload.message_id || payload.data?.msg_id || payload.data?.message_id;
 
-    let userMessage = payload.message?.text || payload.text || payload.message?.caption || payload.data?.text || payload.content || '';
+    let userMessage = payload.message?.text || payload.text || payload.message?.caption || payload.data?.text || payload.content || payload.message?.url || payload.message?.link || payload.message?.href || payload.message?.link_preview?.url || payload.data?.url || payload.data?.link || '';
+
+    if (!userMessage && payload.message?.attachments) {
+        for (const att of payload.message.attachments) {
+            if (att.payload?.url) {
+                userMessage = att.payload.url;
+                break;
+            }
+        }
+    }
 
     // Tự động lưu Chat ID để hẹn giờ gửi lời chúc 00:00 AM
     if (chatId) {
