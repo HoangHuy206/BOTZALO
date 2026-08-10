@@ -1858,7 +1858,7 @@ function extractSearchKeywordFromQuery(query) {
         }
         text = combined.trim();
     }
-    const cleanQ = text.replace(/^(\/search|\/timkiem|\/tailieu|\/video|\/quan|\/shop|tìm quán|tìm shop|tìm cửa hàng|tìm kiếm|tìm hiểu về|tra cứu|tìm hiểu|thông tin gợi cảm về|thông tin 18\+ về|thông tin về|nguồn tài liệu|tài liệu|cho tôi thông tin|cho tớ thông tin|xem video|video về|liệt kê|cho tôi|danh sách)\s*/i, '').trim();
+    const cleanQ = text.replace(/^(?:\/search|\/timkiem|\/tailieu|\/video|\/quan|\/shop|tìm\s*cho\s*tôi|tìm\s*cho\s*tớ|tìm\s*giúp|tìm\s*hộ|tìm\s*quán|tìm\s*shop|tìm\s*cửa\s*hàng|tìm\s*kiếm|tìm\s*hiểu\s*về|tra\s*cứu|tìm\s*hiểu|thông\s*tin\s*gợi\s*cảm\s*về|thông\s*tin\s*18\+\s*về|thông\s*tin\s*về|nguồn\s*tài\s*liệu|tài\s*liệu|cho\s*tôi\s*thông\s*tin|cho\s*tớ\s*thông\s*tin|xem\s*video|video\s*về|liệt\s*kê|cho\s*tôi|danh\s*sách|những\s*video\s*liên\s*quan\s*đến|những\s*video\s*về|video\s*liên\s*quan\s*đến|clip\s*liên\s*quan\s*đến)\s*/i, '').trim();
     return cleanQ.length >= 2 ? cleanQ : text;
 }
 
@@ -3320,7 +3320,7 @@ app.post('/zalo-webhook', async (req, res) => {
             } else {
                 console.log(`🌐 Nhận lệnh Tìm kiếm Internet cho [${chatId}]: "${query}"`);
                 sendTypingAction(chatId);
-                const searchPrompt = `Hãy tìm kiếm thông tin chi tiết trên Internet về: "${query}". Tổng hợp câu trả lời đầy đủ, chính xác, khách quan và trích dẫn các đường link nguồn tham khảo thu thập được ở cuối bài.`;
+                const searchPrompt = `Hãy tìm kiếm các thông tin bài viết, tin tức, nội dung giải trí và video liên quan tới từ khóa: "${query}". Tổng hợp câu trả lời đầy đủ, chi tiết, khách quan và liệt kê đầy đủ các đường link tham khảo thu thập được ở cuối bài.`;
                 const searchReply = await getAIResponse(searchPrompt, chatId);
                 await sendZaloMessage(chatId, searchReply, null, incomingMsgId);
             }
