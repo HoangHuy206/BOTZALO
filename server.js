@@ -1858,7 +1858,7 @@ function extractSearchKeywordFromQuery(query) {
         }
         text = combined.trim();
     }
-    const cleanQ = text.replace(/^(\/search|\/timkiem|\/tailieu|\/video|\/quan|\/shop|tìm quán|tìm shop|tìm cửa hàng|tìm kiếm|tìm hiểu về|tra cứu|tìm hiểu|nguồn tài liệu|tài liệu|cho tôi thông tin|cho tớ thông tin|thông tin về|xem video|video về|liệt kê|cho tôi|danh sách)\s*/i, '').trim();
+    const cleanQ = text.replace(/^(\/search|\/timkiem|\/tailieu|\/video|\/quan|\/shop|tìm quán|tìm shop|tìm cửa hàng|tìm kiếm|tìm hiểu về|tra cứu|tìm hiểu|thông tin gợi cảm về|thông tin 18\+ về|thông tin về|nguồn tài liệu|tài liệu|cho tôi thông tin|cho tớ thông tin|xem video|video về|liệt kê|cho tôi|danh sách)\s*/i, '').trim();
     return cleanQ.length >= 2 ? cleanQ : text;
 }
 
@@ -2359,7 +2359,7 @@ async function getAIResponse(userMessage, chatId = null) {
     const chatHistoryContext = chatId ? getChatHistoryContext(chatId) : '';
 
     // Tự động tìm kiếm web thực tế, địa điểm/quán/shop & video YouTube
-    const isSearchRequired = /(?:trường|đại\s*học|cao\s*đẳng|tuyển\s*sinh|điểm\s*chuẩn|học\s*phí|tài\s*liệu|giáo\s*trình|sách|khóa\s*học|nguồn\s*học|tìm\s*hiểu|tra\s*cứu|tìm\s*kiếm|thông\s*tin\s*về|link|bài\s*báo|video|clip|bài\s*giảng|hướng\s*dẫn|quán|cửa\s*hàng|shop|tiệm|nhà\s*hàng|quán\s*ăn|quán\s*áo|quần\s*áo|thời\s*trang|quán\s*game|khu\s*vui\s*chơi|rạp|phim|trung\s*tâm\s*thương\s*mại|tầng|aeon|vincom|lotte|bigc|go!|cinesphere|mùa|địa\s*chỉ|ở\s*đâu|địa\s*điểm|tìm\s*quán|tìm\s*shop|tìm\s*cửa\s*hàng|facebook|fanpage|fb\s*của|chủ\s*đầu\s*tư|ai\s*làm\s*ra|ai\s*xây|ai\s*mở|xây\s*năm|mở\s*cửa|sự\s*kiện|tin\s*tức|mạng|nội\s*dung|nguồn|wikipedia|wiki|lịch\s*sử|định\s*nghĩa|khái\s*niệm|\/search|\/timkiem|!search|!timkiem|\/tailieu|\/video|\/quan|\/shop)/i.test(userMessage);
+    const isSearchRequired = /(?:trường|đại\s*học|cao\s*đẳng|tuyển\s*sinh|điểm\s*chuẩn|học\s*phí|tài\s*liệu|giáo\s*trình|sách|khóa\s*học|nguồn\s*học|tìm\s*hiểu|tra\s*cứu|tìm\s*kiếm|thông\s*tin\s*về|link|bài\s*báo|video|clip|bài\s*giảng|hướng\s*dẫn|quán|cửa\s*hàng|shop|tiệm|nhà\s*hàng|quán\s*ăn|quán\s*áo|quần\s*áo|thời\s*trang|nội\s*y|đồ\s*lót|bikini|mỹ\s*phẩm|spa|gợi\s*cảm|quyến\s*rũ|18\+|sexy|sensual|lãng\s*mạn|tình\s*dục|tâm\s*lý|gạ\s*gẫm|thả\s*thính|quán\s*game|khu\s*vui\s*chơi|rạp|phim|trung\s*tâm\s*thương\s*mại|tầng|aeon|vincom|lotte|bigc|go!|cinesphere|mùa|địa\s*chỉ|ở\s*đâu|địa\s*điểm|tìm\s*quán|tìm\s*shop|tìm\s*cửa\s*hàng|facebook|fanpage|fb\s*của|chủ\s*đầu\s*tư|ai\s*làm\s*ra|ai\s*xây|ai\s*mở|xây\s*năm|mở\s*cửa|sự\s*kiện|tin\s*tức|mạng|nội\s*dung|nguồn|wikipedia|wiki|lịch\s*sử|định\s*nghĩa|khái\s*niệm|\/search|\/timkiem|!search|!timkiem|\/tailieu|\/video|\/quan|\/shop)/i.test(userMessage);
 
     let searchContext = '';
     if (isSearchRequired) {
