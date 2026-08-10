@@ -2348,6 +2348,52 @@ function getWorldTimeContext() {
            'Khi người dùng hỏi giờ của bất kỳ nước/thành phố nào (ví dụ: "bây giờ là mấy giờ ở VN", "giờ ở Nhật", "giờ ở Mỹ"): BẮT BUỘC trả lời chính xác theo định dạng: "Bây giờ đang là [HH:MM] [sáng/chiều/tối/đêm] tại [Tên nước/thành phố]". Nêu đúng số giờ 24h kèm buổi tương ứng (ví dụ: "Bây giờ đang là 10:02 sáng tại Việt Nam" hoặc "Bây giờ đang là 22:02 tối tại Việt Nam").';
 }
 
+// Hàm tự động truy cập & đọc nội dung / tiêu đề / mô tả từ đường link bất kỳ trên Internet
+async function fetchUrlContent(targetUrl) {
+    if (!targetUrl || !targetUrl.trim()) return null;
+    try {
+        console.log(`🔗 Đang tự động đọc nội dung đường link: "${targetUrl}"...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        
+        const res = await fetch(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7'
+            },
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+            const html = await res.text();
+            
+            const titleMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+                               html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
+                               html.match(/<title[^>]*>(.*?)<\/title>/is);
+            const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+            const descMatch = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+                              html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
+                              html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
+            const description = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+            let bodySnippet = html.replace(/<script[\s\S]*?<\/script>/gi, '')
+                                  .replace(/<style[\s\S]*?<\/style>/gi, '')
+                                  .replace(/<[^>]+>/g, ' ')
+                                  .replace(/\s+/g, ' ')
+                                  .trim();
+            bodySnippet = bodySnippet.slice(0, 1500);
+
+            return { title, description, bodySnippet, url: targetUrl };
+        }
+    } catch (e) {
+        console.warn(`⚠️ Không thể truy cập đường link "${targetUrl}":`, e.message);
+    }
+    return null;
+}
+
 // Hàm gọi Groq AI (Text) với cơ chế tự động chuyển Model dự phòng và đổi Mode linh hoạt
 async function getAIResponse(userMessage, chatId = null) {
     if (!groq) {
@@ -2420,6 +2466,21 @@ async function getAIResponse(userMessage, chatId = null) {
         timeLabel = 'Đêm Khuya 🌙💤';
     }
 
+    // Tự động quét và đọc trực tiếp nội dung các liên kết web/video được gửi trong tin nhắn
+    let urlContext = '';
+    const extractedUrlMatch = userMessage.match(/https?:\/\/[^\s]+/i);
+    if (extractedUrlMatch) {
+        const targetUrl = extractedUrlMatch[0].trim();
+        const urlData = await fetchUrlContent(targetUrl);
+        if (urlData && (urlData.title || urlData.description || urlData.bodySnippet)) {
+            urlContext = `\n\nNỘI DUNG VÀ THÔNG TIN ĐƯỢC TỰ ĐỘNG ĐỌC TRỰC TIẾP TỪ ĐƯỜNG LINK TRONG TIN NHẮN ("${targetUrl}"):\n` +
+                (urlData.title ? `- Tiêu đề trang: ${urlData.title}\n` : '') +
+                (urlData.description ? `- Mô tả trang web: ${urlData.description}\n` : '') +
+                (urlData.bodySnippet ? `- Trích đoạn nội dung chính trên trang: ${urlData.bodySnippet}\n` : '') +
+                '\n-> HƯỚNG DẪN BẮT BUỘC: Bạn hãy phân tích và tóm tắt ngắn gọn nội dung của đường link trên cho người dùng, giải thích rõ link đó chứa thông tin/nội dung gì!';
+        }
+    }
+
     const currentMode = getBotMode(chatId);
     const currentLang = getBotLanguage(chatId);
     let langInstruction = '';
@@ -2452,7 +2513,7 @@ QUY TẮC BẮT BUỘC KHI ĐANG Ở MODE CHỬI NHAU:
 4. ÉP CHỬI TRONG MỌI CÂU HỎI: Dù người dùng hỏi câu gì: BẮT BUỘC PHẢI VĂNG TỤC TRƯỚC, rồi mới vừa văng tục vừa trả lời đúng yêu cầu!
 5. KHUNG THỜI GIAN HIỆN TẠI LÀ: ${timeLabel} (Giờ Việt Nam: ${vnHours}h).
 6. CẤM TUYỆT ĐỐI GIẢNG ĐẠO ĐỨC, CẤM NÓI "văn minh", "lịch sự", "nhã nhặn", "bình tĩnh".
-7. KHI HỎI NGUỒN GỐC / AI TẠO RA BẠN: Vẫn vừa văng tục vừa chốt đanh thép tác giả chính là Đoàn Hoàng Huy 😎👑.${memoryContext}${chatHistoryContext}${searchContext}${worldTimeContext}`;
+7. KHI HỎI NGUỒN GỐC / AI TẠO RA BẠN: Vẫn vừa văng tục vừa chốt đanh thép tác giả chính là Đoàn Hoàng Huy 😎👑.${memoryContext}${chatHistoryContext}${searchContext}${urlContext}${worldTimeContext}`;
     } else if (currentMode === 'goicam') {
         systemPrompt = `Bạn là nữ nhân vật người tình trong tiểu thuyết lãng mạn 18+ quyến rũ, dâm dỗi, nồng cháy và cuồng nhiệt nhất (EXTREME SENSUAL 18+ MODE 🔞💋🔥💦).
 
@@ -2464,7 +2525,7 @@ QUY TẮC BẮT BUỘC KHI ĐANG Ở MODE GỢI CẢM:
 5. PHONG CÁCH XƯNG HỒ: Xưng "em" - gọi "anh/chồng/cưng/chủ nhân...", nũng nịu thả thính gạ gẫm.
 6. KHUNG THỜI GIAN HIỆN TẠI LÀ: ${timeLabel} (Giờ Việt Nam: ${vnHours}h).
 7. EMOJI GỢI CẢM: 💋 🔞 🫦 💦 🍑 🖤 🥵 🤤 👄 🔥 💖.
-8. KHI HỎI NGUỒN GỐC / AI TẠO RA BẠN: Vẫn thì thầm quyến rũ nũng nịu chốt tác giả chính là Đoàn Hoàng Huy 😎👑.${memoryContext}${chatHistoryContext}${searchContext}${worldTimeContext}`;
+8. KHI HỎI NGUỒN GỐC / AI TẠO RA BẠN: Vẫn thì thầm quyến rũ nũng nịu chốt tác giả chính là Đoàn Hoàng Huy 😎👑.${memoryContext}${chatHistoryContext}${searchContext}${urlContext}${worldTimeContext}`;
     } else if (currentMode === 'tinhcam') {
         systemPrompt = `Bạn là Chuyên Gia Tư Vấn Tình Cảm & Tâm Lý Học Tình Yêu Thấu Cảm Sâu Sắc (LOVE & RELATIONSHIP COUNSELOR EXPERT 💘🌸).
 
@@ -2478,7 +2539,7 @@ QUY TẮC BẮT BUỘC KHI ĐANG Ở MODE TƯ VẤN TÌNH CẢM:
 4. TRẢ LỜI SÚC TÍCH & ĐÚNG TRỌNG TÂM: Ngắn gọn vừa đủ ý (2 - 4 đoạn ngắn), giọng văn ấm áp như người anh/chị trải đời và chuyên gia tâm lý thực thụ. CẤM văn mẫu miên man sáo rỗng.
 5. KHUNG THỜI GIAN HIỆN TẠI LÀ: ${timeLabel} (Giờ Việt Nam: ${vnHours}h).
 6. EMOJI ẤM ÁP: 💘 💖 🌸 💕 🕊️ 🌿 ✨ 💓 💭 🧸.
-7. KHI HỎI NGUỒN GỐC / AI TẠO RA BẠN: Vẫn trả lời ấm áp và chốt tác giả chính là Đoàn Hoàng Huy 😎👑.${memoryContext}${chatHistoryContext}${searchContext}${worldTimeContext}`;
+7. KHI HỎI NGUỒN GỐC / AI TẠO RA BẠN: Vẫn trả lời ấm áp và chốt tác giả chính là Đoàn Hoàng Huy 😎👑.${memoryContext}${chatHistoryContext}${searchContext}${urlContext}${worldTimeContext}`;
     } else {
         systemPrompt = `Bạn là Bot Đẹp Trai (NORMAL MODE ✨💙).
 
@@ -2493,7 +2554,7 @@ QUY TẮC TRONG MODE BÌNH THƯỜNG (TẬP TRUNG TRỌNG TÂM & TỐI ƯU API):
 8. CẢNH BÁO QUAN TRỌNG KHI TRA CỨU ĐỊA ĐIỂM, TTTM, SHOP, KHU VUI CHƠI & QUÁN ĂN: BẮT BUỘC liệt kê ĐÍCH DANH tên thương hiệu / gian hàng / khu vui chơi thực tế cụ thể (Ví dụ: Jump Arena, Wolfoo City, tiNiWorld, Timezone, Kidzooona, CGV, Haidilao, Dookki, Gogi, Canifa...). TUYỆT ĐỐI CẤM liệt kê chung chung sáo rỗng như "khu vui chơi trong nhà", "khu chơi bóng", "quán ăn trẻ em"! Kèm mô tả ngắn gọn 1-2 câu cho từng thương hiệu.
 9. NĂNG LỰC TẠO / VẼ VIDEO AI CHUYÊN NGHIỆP: Mô tả kịch bản hình ảnh kết xuất từng giây, hiệu ứng âm thanh sống động (audio 🔊), góc quay cinematic chuyên nghiệp.
 10. KHÔNG chửi bậy (trừ khi ở Roast mode), KHÔNG xúc phạm vô cớ người dùng. Kèm emoji dễ thương: 😎 😊 🤖 💬 🚀 👍 ✨.
-11. KHI HỎI NGUỒN GỐC / AI TẠO RA BẠN: Bịa câu chuyện vui và chốt lại tác giả chính là Đoàn Hoàng Huy 😎👑.${memoryContext}${chatHistoryContext}${searchContext}${worldTimeContext}`;
+11. KHI HỎI NGUỒN GỐC / AI TẠO RA BẠN: Bịa câu chuyện vui và chốt lại tác giả chính là Đoàn Hoàng Huy 😎👑.${memoryContext}${chatHistoryContext}${searchContext}${urlContext}${worldTimeContext}`;
     }
 
     // ======================================================
