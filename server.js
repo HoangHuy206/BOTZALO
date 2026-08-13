@@ -4439,6 +4439,7 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const pendingAudioLinks = new Map();
 
 if (DISCORD_TOKEN && DISCORD_TOKEN.trim() !== '') {
+    console.log('🤖 Đang khởi động Discord Bot với DISCORD_TOKEN...');
     try {
         const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes, SlashCommandBuilder } = require('discord.js');
         const discordClient = new Client({
@@ -4937,6 +4938,8 @@ Nhiệm vụ của bạn:
     } catch (e) {
         console.warn('⚠️ Chưa khởi động được Discord Bot:', e.message);
     }
+} else {
+    console.warn('⚠️ CẢNH BÁO: Chưa cấu hình DISCORD_TOKEN trong biến môi trường process.env.DISCORD_TOKEN!');
 }
 
 const PORT = process.env.PORT || 3000;
