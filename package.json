@@ -10,13 +10,24 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.19.2",
+    "@distube/ytdl-core": "^4.16.12",
     "@gradio/client": "^2.4.0",
+    "biar-fca": "^3.9.5",
+    "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "fca-delta": "^3.9.0",
     "fca-horizon-remastered": "^0.0.1-security",
     "fca-unofficial": "^1.3.10",
+    "ffmpeg-static": "^5.3.0",
     "groq-sdk": "^1.5.0",
+    "play-dl": "^1.9.7",
+    "prism-media": "^1.3.5",
+    "sodium-native": "^5.1.0",
     "tesseract.js": "^7.0.0",
-    "untun": "^0.2.2"
+    "untun": "^0.2.2",
+    "yt-dlp-exec": "^1.0.2"
   }
 }

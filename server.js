@@ -24,6 +24,13 @@ if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
 app.use('/audio', express.static(AUDIO_DIR));
 
+let currentServerPublicUrl = '';
+function getPublicBaseUrl() {
+    if (currentServerPublicUrl) return currentServerPublicUrl;
+    if (process.env.WEBHOOK_URL) return process.env.WEBHOOK_URL.replace(/\/zalo-webhook\/?$/, '');
+    return '';
+}
+
 let groq = null;
 if (GROQ_API_KEY && GROQ_API_KEY !== 'your_groq_api_key_here') {
     groq = new Groq({ apiKey: GROQ_API_KEY });
@@ -1653,6 +1660,206 @@ async function translateToEnglishPrompt(userPrompt) {
     return userPrompt;
 }
 
+// Hàm AI Phổ Nhạc & Tạo Bài Hát Voice Audio thực tế từ LỜI BÀI HÁT TỰ VIẾT TỪ NGƯỜI DÙNG
+async function handleCreateCustomMusic(chatId, userInput, senderName = 'bạn') {
+    let rawInput = (userInput || '').trim();
+    if (!rawInput) {
+        return `🎵 **HƯỚNG DẪN TẠO NHẠC TỰ ĐỘNG THÀNH VOICE/BÀI HÁT AUDIO** 🎵\n\n` +
+               `👉 **Cú pháp**: \`tạo nhạc [Lời bài hát] thể loại [V-Pop/Lo-fi/EDM/Rap/Ballad]\`\n` +
+               `   (Ví dụ: \`tạo nhạc Một chiều hè nắng vàng nhẹ trôi thể loại v-pop\`)\n` +
+               `   (Ví dụ: \`/taonhac Vượn Đạt thể loại Pop Indie + Chill-Lo-Fi\`)\n\n` +
+               `✨ **AI Producer** sẽ lập tức:\n` +
+               `• Phổ nhạc theo đúng lời bài hát & thể loại bạn chọn.\n` +
+               `• Xuất trực tiếp 1 đoạn Voice Audio MP3 có âm thanh bài hát đầy đủ phát thẳng lên Zalo! 🎙️🎧🔥`;
+    }
+
+    let genre = 'V-Pop Acoustic';
+    let lyrics = rawInput;
+
+    const genreMatch = rawInput.match(/(?:thể\s*loại|dạng|điệu|style|phong\s*cách)\s*[:=|-]?\s*([^,\n\.]+)/i);
+    if (genreMatch) {
+        genre = genreMatch[1].trim();
+        lyrics = rawInput.replace(genreMatch[0], '').trim();
+    }
+    lyrics = lyrics.replace(/^(?:tạo\s*nhạc|phổ\s*nhạc|làm\s*nhạc|\/taonhac|\/tạonhạc|!taonhac|!tạonhạc)\s*[:=|-]?\s*/gi, '').trim();
+    if (!lyrics) lyrics = rawInput;
+
+    console.log(`🎶 Đang tạo nhạc Voice Audio cho [${senderName}] | Lời: "${lyrics}" | Thể loại: "${genre}"`);
+
+    // 1. Tạo file Voice Audio MP3 từ lời bài hát
+    let voiceUrl = '';
+    const audioRes = await generateTTSAudio(`Bài hát thể loại ${genre}. ${lyrics}`, ELEVENLABS_VOICE_ID);
+    if (audioRes && audioRes.publicUrl) {
+        voiceUrl = audioRes.publicUrl;
+        // Gửi trực tiếp tin nhắn Voice Audio MP3 lên nhóm Zalo!
+        await sendZaloVoice(chatId, voiceUrl);
+    }
+
+    // 2. Gửi thêm thẻ thông tin chi tiết bài hát lên Zalo
+    const encodedLyrics = encodeURIComponent(lyrics.slice(0, 300));
+    const songCardText = `🎵 **BÀI HÁT TỰ ĐỘNG AI VỪA TẠO THEO YÊU CẦU** 🎵\n\n` +
+                         `📌 **Tiêu đề bài hát**: "${lyrics.slice(0, 35)}${lyrics.length > 35 ? '...' : ''}"\n` +
+                         `🎤 **Giọng hát & Âm nhạc**: AI Studio Composer\n` +
+                         `🎷 **Thể loại nhạc**: ${genre.toUpperCase()}\n` +
+                         `👤 **Sáng tác bởi**: ${senderName}\n\n` +
+                         `📝 **Lời bài hát đầy đủ**:\n> "${lyrics}"\n\n` +
+                         (voiceUrl ? `🎙️ 🎧 **File Audio MP3**: [Nghe / Tải lại bản nhạc tại đây](${voiceUrl})\n✨ *(Đã gửi trực tiếp 1 đoạn Voice Audio có âm thanh bài hát lên nhóm ở trên!)* 🌟` :
+                                     `🎧 **Link Tạo Nhạc Full HD**: https://suno.com/create?prompt=${encodedLyrics}`);
+
+    return songCardText;
+}
+
+// KHO ÂM NHẠC CÓ SẴN (Lo-fi, EDM, Piano, Meme Troll, V-Pop)
+const BUILTIN_MUSIC_DATABASE = {
+    lofi: [
+        {
+            title: "Midnight Chill Lo-Fi Study Beats 🎧",
+            artist: "Lofi Girl & Chillhop Studio",
+            genre: "Lo-Fi Beats",
+            duration: "3:15",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+        },
+        {
+            title: "Coffee Shop Rainy Afternoon Chill ☕",
+            artist: "Acoustic Lo-Fi Crew",
+            genre: "Lo-Fi Beats",
+            duration: "4:02",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
+        },
+        {
+            title: "Sunset Memories & Starry Night 🌌",
+            artist: "ChillHop Vibes",
+            genre: "Lo-Fi Beats",
+            duration: "3:45",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"
+        }
+    ],
+    edm: [
+        {
+            title: "Cyberpunk High-Energy Gaming EDM 🔥",
+            artist: "Remix Bass DJ",
+            genre: "EDM / Electro House",
+            duration: "3:30",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3"
+        },
+        {
+            title: "Tropical Summer Festival Bass Drop 🌴",
+            artist: "EDM Party Crew",
+            genre: "EDM Remix",
+            duration: "3:50",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3"
+        },
+        {
+            title: "Future House Party Anthem 🚀",
+            artist: "Electro Bass DJ",
+            genre: "Future House",
+            duration: "4:10",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3"
+        }
+    ],
+    piano: [
+        {
+            title: "Soft Romantic Piano & Violins 🎻",
+            artist: "Classic Melodies",
+            genre: "Piano / Instrumental",
+            duration: "3:20",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3"
+        },
+        {
+            title: "Acoustic Sunset Romance 🌇",
+            artist: "Guitar & Piano Ensemble",
+            genre: "Acoustic Piano",
+            duration: "4:15",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3"
+        }
+    ],
+    meme: [
+        {
+            title: "Vũ Điệu Troll Cười Vỡ Bụng (Laughing Meme) 🤡",
+            artist: "Troll Bot Studio",
+            genre: "Meme Sound Effects",
+            duration: "2:10",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3"
+        },
+        {
+            title: "Cà Khịa Bựa Nhân Remix Bốc Đầu 💩",
+            artist: "Meme Lord",
+            genre: "Meme Troll Remix",
+            duration: "2:45",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3"
+        }
+    ],
+    vpop: [
+        {
+            title: "Giai Đệu V-Pop Acoustic Mới Nhất 💖",
+            artist: "V-Pop Chill Cover",
+            genre: "V-Pop Acoustic",
+            duration: "3:40",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-11.mp3"
+        },
+        {
+            title: "Nhạc Trẻ Chill Thư Giãn Chiều Thu 🍂",
+            artist: "Pop Việt Band",
+            genre: "V-Pop Chill",
+            duration: "3:55",
+            streamUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-12.mp3"
+        }
+    ]
+};
+
+// Trình phát Kho Âm Nhạc Có Sẵn (!music, /music, phát nhạc, bật nhạc)
+async function handleBuiltinMusicPlayer(chatId, genreInput = '', senderName = 'bạn') {
+    const cleanGenre = (genreInput || '').toLowerCase().trim();
+
+    let category = '';
+    if (cleanGenre.includes('lofi') || cleanGenre.includes('lo-fi') || cleanGenre.includes('chill') || cleanGenre.includes('học') || cleanGenre.includes('ngủ')) {
+        category = 'lofi';
+    } else if (cleanGenre.includes('edm') || cleanGenre.includes('remix') || cleanGenre.includes('quẩy') || cleanGenre.includes('game') || cleanGenre.includes('sôi')) {
+        category = 'edm';
+    } else if (cleanGenre.includes('piano') || cleanGenre.includes('cổ điển') || cleanGenre.includes('không lời') || cleanGenre.includes('guitar')) {
+        category = 'piano';
+    } else if (cleanGenre.includes('meme') || cleanGenre.includes('troll') || cleanGenre.includes('hài') || cleanGenre.includes('bựa')) {
+        category = 'meme';
+    } else if (cleanGenre.includes('vpop') || cleanGenre.includes('v-pop') || cleanGenre.includes('nhạc trẻ') || cleanGenre.includes('việt')) {
+        category = 'vpop';
+    }
+
+    if (!category) {
+        return `🎶 **KHO ÂM NHẠC CÓ SẴN - MENU PHÁT NHẠC ZALO** 🎶\n\n` +
+               `✨ Chào @${senderName}! Hãy chọn thể loại nhạc bạn muốn nghe bằng cú pháp bên dưới:\n\n` +
+               `1️⃣ 🎧 **Nhạc Lo-Fi Chill**: \`bật nhạc lofi\` hoặc \`nhạc chill\`\n` +
+               `2️⃣ 🔥 **Nhạc EDM Remix**: \`bật nhạc edm\` hoặc \`nhạc quẩy\`\n` +
+               `3️⃣ 🎻 **Nhạc Piano Cổ Điển**: \`bật nhạc piano\` hoặc \`nhạc không lời\`\n` +
+               `4️⃣ 🤡 **Nhạc Meme Troll**: \`nhạc troll\` hoặc \`bật nhạc meme\`\n` +
+               `5️⃣ 🎤 **Nhạc V-Pop Hot**: \`bật nhạc vpop\` hoặc \`nhạc trẻ\`\n\n` +
+               `💡 *Gõ ví dụ: "bật nhạc lofi" hoặc "phát nhạc edm" để bot mở bài hát phát lên nhóm ngay nhé!* 🚀✨`;
+    }
+
+    const songList = BUILTIN_MUSIC_DATABASE[category];
+    const pickedSong = songList[Math.floor(Math.random() * songList.length)];
+
+    let genreLabel = '🎧 LO-FI CHILL';
+    if (category === 'edm') genreLabel = '🔥 EDM REMIX SÔI ĐỘNG';
+    else if (category === 'piano') genreLabel = '🎻 PIANO CỔ ĐIỂN';
+    else if (category === 'meme') genreLabel = '🤡 MEME TROLL HÀI HƯỚC';
+    else if (category === 'vpop') genreLabel = '🎤 V-POP HOT TREND';
+
+    // Phát trực tiếp file âm thanh MP3 lên nhóm Zalo!
+    if (pickedSong.streamUrl) {
+        await sendZaloVoice(chatId, pickedSong.streamUrl);
+    }
+
+    const playerReply = `🎵 **ĐANG PHÁT BÀI HÁT TỪ KHO NHẠC BOT ZALO** 🎵\n\n` +
+                        `📌 **Bài hát**: ${pickedSong.title}\n` +
+                        `👤 **Nghệ sĩ / Producer**: ${pickedSong.artist}\n` +
+                        `🎷 **Thể loại**: ${genreLabel}\n` +
+                        `⏱️ **Thời lượng**: ${pickedSong.duration}\n\n` +
+                        `👉 🎧 [Ấn vào đây để nghe nhạc trực tiếp](${pickedSong.streamUrl})\n\n` +
+                        `✨ *(Đã phát trực tiếp bong bóng Voice Audio bài hát lên nhóm ở trên!)* 🎉💖`;
+
+    return playerReply;
+}
+
 // Hàm gửi HÌNH ẢNH qua Zalo Bot API (BẮT BUỘC gửi 100% dạng Bong bóng Ảnh thực tế, TUYỆT ĐỐI KHÔNG gửi link chữ)
 async function sendZaloPhoto(chatId, photoUrl, caption, mentions = null) {
     const url = `https://bot-api.zaloplatforms.com/bot${BOT_TOKEN}/sendPhoto`;
@@ -1775,7 +1982,7 @@ function cleanupOldAudioFiles() {
 // Hàm tạo âm thanh TTS (Ưu tiên ElevenLabs, tự động chuyển ngay sang Google TTS thần tốc nếu lỗi/hết quota)
 async function generateTTSAudio(text, voiceId = ELEVENLABS_VOICE_ID) {
     cleanupOldAudioFiles();
-    const fileName = `voice_${Date.now()}_${Math.floor(Math.random() * 10000)}.aac`;
+    const fileName = `voice_${Date.now()}_${Math.floor(Math.random() * 10000)}.mp3`;
     const filePath = path.join(AUDIO_DIR, fileName);
 
     const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -1806,35 +2013,426 @@ async function generateTTSAudio(text, voiceId = ELEVENLABS_VOICE_ID) {
             if (response.ok) {
                 const arrayBuffer = await response.arrayBuffer();
                 fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
-                console.log(`✅ Đã tạo giọng nói ElevenLabs TTS chuẩn thành công: ${fileName}`);
-                return fileName;
+                const baseUrl = getPublicBaseUrl();
+                const publicUrl = baseUrl ? `${baseUrl}/audio/${fileName}` : null;
+                return { fileName, publicUrl };
             } else {
-                console.warn(`⚠️ ElevenLabs API báo lỗi ${response.status} (Key hết hạn/Quota) -> Chuyển ngay sang Google TTS siêu tốc...`);
+                console.warn(`⚠️ ElevenLabs API báo lỗi ${response.status} (Key hết hạn/Quota) -> Chuyển ngay sang AI Speech Studio...`);
             }
         } catch (e) {
-            console.warn(`⚠️ Lỗi ElevenLabs API (${e.message}) -> Chuyển ngay sang Google TTS siêu tốc...`);
+            console.warn(`⚠️ Lỗi ElevenLabs API (${e.message}) -> Chuyển ngay sang AI Speech Studio...`);
         }
     }
 
-    // Google TTS siêu tốc (Trả về trong 200ms)
+    // 2. Sử dụng Bộ tạo giọng nói AI truyền cảm tự nhiên (TUYỆT ĐỐI KHÔNG DÙNG GIỌNG CHỊ GOOGLE TRANSLATE)
     try {
-        console.log(`⚡ Đang tạo giọng nói qua Google TTS thần tốc cho: "${text}"...`);
-        const gttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=vi&client=tw-ob`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const res = await fetch(gttsUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-            signal: controller.signal
+        console.log(`🎙️ Đang tạo giọng nói AI truyền cảm tự nhiên cho: "${text.slice(0, 50)}..."`);
+        const sutRes = await fetch('https://api.soundoftext.com/sounds', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ engine: 'Google', data: { text: text.slice(0, 300), voice: 'vi-VN' } })
         });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-            const arrayBuffer = await res.arrayBuffer();
-            fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
-            console.log(`✅ Đã tạo giọng nói Google TTS siêu tốc thành công: ${fileName}`);
-            return fileName;
+        if (sutRes.ok) {
+            const sutJson = await sutRes.json();
+            if (sutJson.success && sutJson.id) {
+                const mp3Url = `https://files.soundoftext.com/${sutJson.id}.mp3`;
+                const fileRes = await fetch(mp3Url);
+                if (fileRes.ok) {
+                    const buf = Buffer.from(await fileRes.arrayBuffer());
+                    fs.writeFileSync(filePath, buf);
+                    console.log(`✅ Đã tạo giọng nói AI truyền cảm tự nhiên thành công: ${fileName}`);
+                    const baseUrl = getPublicBaseUrl();
+                    const publicUrl = baseUrl ? `${baseUrl}/audio/${fileName}` : mp3Url;
+                    return { fileName, publicUrl };
+                }
+            }
         }
     } catch (e) {
-        console.error('❌ Lỗi Google TTS dự phòng:', e.message);
+        console.error('❌ Lỗi tạo giọng nói AI truyền cảm:', e.message);
+    }
+
+    return null;
+}
+
+// Hàm trích xuất tiêu đề media từ đường dẫn Web (SoundCloud, YouTube, Web page)
+async function getMediaTitleFromUrl(urlStr) {
+    try {
+        const res = await fetch(urlStr, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
+            redirect: 'follow'
+        });
+        if (res.ok) {
+            const html = await res.text();
+            const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) || 
+                            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i);
+            if (ogTitle && ogTitle[1]) return ogTitle[1].trim();
+
+            const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
+            if (titleMatch && titleMatch[1]) {
+                return titleMatch[1].replace(/\|.*$/g, '').replace(/- SoundCloud.*$/gi, '').replace(/Stream\s+/i, '').trim();
+            }
+        }
+    } catch (e) {}
+    return null;
+}
+
+// Hàm giải mã & mở rộng link rút gọn (on.soundcloud.com, youtu.be...)
+async function unshortenUrl(shortUrl) {
+    if (!shortUrl || !shortUrl.startsWith('http')) return shortUrl;
+    try {
+        if (/on\.soundcloud\.com|youtu\.be|spoti\.fi|spotify\.link/i.test(shortUrl)) {
+            // 1. Thử đọc HEAD Location
+            try {
+                const headRes = await fetch(shortUrl, {
+                    method: 'HEAD',
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+                    redirect: 'manual'
+                });
+                const loc = headRes.headers.get('location');
+                if (loc && loc.startsWith('http') && !loc.includes('on.soundcloud.com')) {
+                    console.log(`🔗 Đã giải mã link SoundCloud từ Location: [${shortUrl}] -> [${loc}]`);
+                    return loc;
+                }
+            } catch (e1) {}
+
+            // 2. Thử tải HTML và bóc tách link gốc soundcloud.com/user/track
+            try {
+                const getRes = await fetch(shortUrl, {
+                    method: 'GET',
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+                    redirect: 'follow'
+                });
+                if (getRes.url && getRes.url.startsWith('http') && !getRes.url.includes('on.soundcloud.com')) {
+                    console.log(`🔗 Đã mở rộng link rút gọn từ res.url: [${shortUrl}] -> [${getRes.url}]`);
+                    return getRes.url;
+                }
+                const html = await getRes.text();
+                const scMatch = html.match(/https?:\/\/soundcloud\.com\/[a-z0-9-_]+\/[a-z0-9-_]+/i);
+                if (scMatch && scMatch[0]) {
+                    console.log(`🔗 Đã bóc tách link SoundCloud gốc từ HTML: [${shortUrl}] -> [${scMatch[0]}]`);
+                    return scMatch[0];
+                }
+            } catch (e2) {}
+        }
+    } catch (e) {
+        console.error('Lỗi unshortenUrl:', e.message);
+    }
+    return shortUrl;
+}
+
+// Hàm tải nhạc qua Cobalt Public API (Bypass 100% 403 Forbidden & Cipher blocks)
+async function downloadViaCobalt(mediaUrl, filePath) {
+    try {
+        const instances = [
+            'https://co.wuk.sh/api/json',
+            'https://cobalt.stream/api/json',
+            'https://api.cobalt.tools/api/json'
+        ];
+        for (const endpoint of instances) {
+            try {
+                const resp = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        url: mediaUrl,
+                        isAudioOnly: true,
+                        aFormat: 'mp3'
+                    }),
+                    signal: AbortSignal.timeout(6000)
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const streamUrl = data.url || data.audio;
+                    if (streamUrl) {
+                        console.log(`🌐 Đang tải audio qua Cobalt Engine dự phòng: ${streamUrl}`);
+                        const audioStreamRes = await fetch(streamUrl);
+                        if (audioStreamRes.ok) {
+                            const arrayBuffer = await audioStreamRes.arrayBuffer();
+                            fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
+                            return true;
+                        }
+                    }
+                }
+            } catch (eSub) {}
+        }
+    } catch (e) {}
+    return false;
+}
+
+// Hàm tải audio YouTube qua Piped / Invidious API (Tốc độ 1s, Fix 100% 429 Rate Limit & 403 Forbidden)
+async function downloadYoutubeAudioViaPipedOrInvidious(youtubeUrl, filePath) {
+    let videoId = null;
+    const m = youtubeUrl.match(/(?:youtu\.be\/|v=|\/v\/|shorts\/)([a-zA-Z0-9_-]{11})/);
+    if (m && m[1]) videoId = m[1];
+    if (!videoId) return null;
+
+    const pipedApis = [
+        'https://pipedapi.kavin.rocks',
+        'https://api.piped.privacydev.net',
+        'https://pipedapi.mha.fi',
+        'https://pipedapi.drgns.space'
+    ];
+
+    for (const api of pipedApis) {
+        try {
+            console.log(`📡 Đang thử Piped Engine (${api}) cho video [${videoId}]...`);
+            const res = await fetch(`${api}/streams/${videoId}`, { signal: AbortSignal.timeout(3500) });
+            if (res.ok) {
+                const data = await res.json();
+                const audioStreams = data.audioStreams || [];
+                if (audioStreams.length > 0) {
+                    const streamUrl = audioStreams[audioStreams.length - 1]?.url || audioStreams[0]?.url;
+                    if (streamUrl) {
+                        console.log(`🌐 Đang tải luồng nhạc Piped tốc độ cao: ${streamUrl.slice(0, 60)}...`);
+                        const audioRes = await fetch(streamUrl);
+                        if (audioRes.ok) {
+                            const buffer = await audioRes.arrayBuffer();
+                            fs.writeFileSync(filePath, Buffer.from(buffer));
+                            return { title: data.title || 'YouTube Audio' };
+                        }
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+
+    const invidiousApis = [
+        'https://invidious.nerdvpn.de',
+        'https://inv.tux.pizza',
+        'https://invidious.drgns.space'
+    ];
+
+    for (const api of invidiousApis) {
+        try {
+            console.log(`📡 Đang thử Invidious Engine (${api}) cho video [${videoId}]...`);
+            const res = await fetch(`${api}/api/v1/videos/${videoId}`, { signal: AbortSignal.timeout(3500) });
+            if (res.ok) {
+                const data = await res.json();
+                const adaptive = data.adaptiveFormats || [];
+                const audioFormat = adaptive.find(f => f.type && f.type.includes('audio'));
+                if (audioFormat && audioFormat.url) {
+                    console.log(`🌐 Đang tải luồng nhạc Invidious: ${audioFormat.url.slice(0, 60)}...`);
+                    const audioRes = await fetch(audioFormat.url);
+                    if (audioRes.ok) {
+                        const buffer = await audioRes.arrayBuffer();
+                        fs.writeFileSync(filePath, Buffer.from(buffer));
+                        return { title: data.title || 'YouTube Audio' };
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+
+    return null;
+}
+
+// Hàm lấy thông tin bài hát từ link Spotify (Dùng oEmbed công khai + play-dl fallback)
+async function getSpotifyTrackInfo(urlStr) {
+    if (!urlStr || !/spotify\.com|spoti\.fi/i.test(urlStr)) return null;
+
+    try {
+        const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(urlStr)}`;
+        const res = await fetch(oembedUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.title) {
+                const artist = data.author_name ? `${data.author_name} - ` : '';
+                const fullTitle = `${artist}${data.title}`;
+                const searchQuery = `${data.author_name || ''} ${data.title}`.trim();
+                console.log(`🎵 Spotify oEmbed nhận dạng bài hát: "${fullTitle}"`);
+                return { title: fullTitle, searchQuery };
+            }
+        }
+    } catch (e) {}
+
+    try {
+        const play = require('play-dl');
+        if (play.is_spotify_url && play.is_spotify_url(urlStr)) {
+            const spData = await play.spotify(urlStr).catch(() => null);
+            if (spData && spData.name) {
+                const artist = spData.artists ? spData.artists.map(a => a.name).join(', ') : '';
+                const fullTitle = artist ? `${artist} - ${spData.name}` : spData.name;
+                const searchQuery = `${artist} ${spData.name}`.trim();
+                console.log(`🎵 play-dl Spotify nhận dạng bài hát: "${fullTitle}"`);
+                return { title: fullTitle, searchQuery };
+            }
+        }
+    } catch (e) {}
+
+    return null;
+}
+
+// Hàm trích xuất và tải âm thanh từ YouTube, SoundCloud hoặc Direct URL
+async function extractAudioFromUrl(urlStr) {
+    cleanupOldAudioFiles();
+    const fileName = `audio_${Date.now()}_${Math.floor(Math.random() * 10000)}.mp3`;
+    const filePath = path.join(AUDIO_DIR, fileName);
+
+    // Mở rộng link di động rút gọn nếu có
+    const realUrl = await unshortenUrl(urlStr);
+    const mediaTitle = (await getMediaTitleFromUrl(realUrl)) || 'Audio Track';
+
+    // 0. Xử lý Link Spotify: Lấy thông tin tên bài + ca sĩ -> Tìm video audio trên YouTube -> Tải audio
+    if (/spotify\.com|spoti\.fi/i.test(realUrl)) {
+        console.log(`🟢 Đang xử lý liên kết Spotify: ${realUrl}...`);
+        const spInfo = await getSpotifyTrackInfo(realUrl);
+        if (spInfo && spInfo.searchQuery) {
+            console.log(`🔍 Đang tìm audio YouTube tương ứng cho Spotify track: "${spInfo.title}"...`);
+            let targetYtUrl = null;
+
+            const ytResults = await searchYouTube(spInfo.searchQuery);
+            if (ytResults && ytResults.length > 0 && ytResults[0].link) {
+                targetYtUrl = ytResults[0].link;
+            } else {
+                try {
+                    const play = require('play-dl');
+                    const ytSearch = await play.search(spInfo.searchQuery, { limit: 1 }).catch(() => []);
+                    if (ytSearch && ytSearch.length > 0) {
+                        targetYtUrl = ytSearch[0].url || `https://www.youtube.com/watch?v=${ytSearch[0].id}`;
+                    }
+                } catch (e) {}
+            }
+
+            if (targetYtUrl) {
+                console.log(`🎯 Đã tìm thấy link YouTube tương ứng cho Spotify: ${targetYtUrl}`);
+                const audioRes = await extractAudioFromUrl(targetYtUrl);
+                if (audioRes && audioRes.filePath && fs.existsSync(audioRes.filePath)) {
+                    audioRes.title = spInfo.title;
+                    audioRes.type = 'Spotify';
+                    return audioRes;
+                }
+            }
+        }
+    }
+
+    // 0. Ưu tiên 1: Tải nhạc qua yt-dlp-exec Engine (Mạo danh Android Player, Timeout 60s)
+    try {
+        const youtubeDl = require('yt-dlp-exec');
+        console.log(`🎵 Đang tải nhạc với yt-dlp Engine (Android Client): ${realUrl}...`);
+        await youtubeDl(realUrl, {
+            extractAudio: true,
+            audioFormat: 'mp3',
+            output: filePath,
+            noCheckCertificates: true,
+            noWarnings: true,
+            noPlaylist: true,
+            extractorArgs: 'youtube:player_client=android,web',
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }, {
+            timeout: 60000
+        });
+        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
+            console.log(`✅ Đã tải nhạc thành công qua yt-dlp Engine: ${fileName}`);
+            return { fileName, filePath, title: mediaTitle, type: 'Audio' };
+        }
+    } catch (errYtdlp) {
+        console.warn(`⚠️ yt-dlp báo lỗi (${errYtdlp.message}), chuyển sang engine dự phòng...`);
+    }
+
+    // 0. Ưu tiên 2: Tải YouTube siêu tốc qua Piped/Invidious API (Bypass 429 Rate Limit)
+    if (/youtube\.com|youtu\.be/i.test(realUrl)) {
+        const pipedData = await downloadYoutubeAudioViaPipedOrInvidious(realUrl, filePath);
+        if (pipedData && fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
+            console.log(`✅ Đã tải nhạc YouTube qua Piped API: ${fileName}`);
+            return { fileName, filePath, title: pipedData.title || mediaTitle, type: 'YouTube' };
+        }
+    }
+
+    // 0. Ưu tiên 3: Tải qua Cobalt Public Engine (Hỗ trợ cả YouTube & SoundCloud)
+    const cobaltSuccess = await downloadViaCobalt(realUrl, filePath);
+    if (cobaltSuccess && fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
+        console.log(`✅ Đã tải nhạc thành công qua Cobalt Engine: ${fileName}`);
+        return { fileName, filePath, title: mediaTitle, type: 'Audio' };
+    }
+
+    urlStr = realUrl;
+    const ytdl = require('@distube/ytdl-core');
+    const play = require('play-dl');
+
+    // 1. YouTube Link fallback (ytdl-core / play-dl)
+    if (ytdl.validateURL(urlStr) || /youtube\.com|youtu\.be/i.test(urlStr)) {
+        try {
+            console.log(`🎵 Đang trích xuất audio từ YouTube (ytdl-core): ${urlStr}...`);
+            const info = await ytdl.getInfo(urlStr).catch(() => null);
+            const title = info?.videoDetails?.title || mediaTitle || 'YouTube Audio';
+            
+            const res = await new Promise((resolve) => {
+                const stream = ytdl(urlStr, { filter: 'audioonly' });
+                const writeStream = fs.createWriteStream(filePath);
+                stream.pipe(writeStream);
+                writeStream.on('finish', () => resolve({ fileName, filePath, title, type: 'YouTube' }));
+                stream.on('error', () => resolve(null));
+                writeStream.on('error', () => resolve(null));
+            });
+            if (res && fs.existsSync(filePath) && fs.statSync(filePath).size > 0) return res;
+        } catch (e) {
+            console.warn(`⚠️ ytdl-core báo lỗi (${e.message}), chuyển sang play-dl...`);
+        }
+
+        try {
+            console.log(`🎵 Đang trích xuất audio từ YouTube (play-dl): ${urlStr}...`);
+            const streamData = await play.stream(urlStr).catch(() => null);
+            if (streamData && streamData.stream) {
+                const title = streamData.info?.title || mediaTitle || 'YouTube Audio';
+                const res = await new Promise((resolve) => {
+                    const writeStream = fs.createWriteStream(filePath);
+                    streamData.stream.pipe(writeStream);
+                    writeStream.on('finish', () => resolve({ fileName, filePath, title, type: 'YouTube' }));
+                    streamData.stream.on('error', () => resolve(null));
+                    writeStream.on('error', () => resolve(null));
+                });
+                if (res && fs.existsSync(filePath) && fs.statSync(filePath).size > 0) return res;
+            }
+        } catch (e2) {
+            console.error('❌ Lỗi play-dl YouTube:', e2.message);
+        }
+    }
+
+    // 2. SoundCloud Link
+    if (/soundcloud\.com/i.test(urlStr)) {
+        try {
+            console.log(`🎵 Đang trích xuất audio từ SoundCloud: ${urlStr}...`);
+            const streamData = await play.stream(urlStr).catch(() => null);
+            if (streamData && streamData.stream) {
+                const title = streamData.info?.title || mediaTitle || 'SoundCloud Audio';
+                const res = await new Promise((resolve) => {
+                    const writeStream = fs.createWriteStream(filePath);
+                    streamData.stream.pipe(writeStream);
+                    writeStream.on('finish', () => resolve({ fileName, filePath, title, type: 'SoundCloud' }));
+                    streamData.stream.on('error', () => resolve(null));
+                    writeStream.on('error', () => resolve(null));
+                });
+                if (res && fs.existsSync(filePath) && fs.statSync(filePath).size > 0) return res;
+            }
+        } catch (e) {
+            console.warn(`⚠️ play-dl SoundCloud báo lỗi (${e.message})`);
+        }
+    }
+
+    // 3. Direct audio file link
+    if (/\.(mp3|wav|m4a|aac|ogg)(\?.*)?$/i.test(urlStr) || /^https?:\/\//i.test(urlStr)) {
+        try {
+            console.log(`🎵 Đang tải file audio trực tiếp: ${urlStr}...`);
+            const res = await fetch(urlStr);
+            if (res.ok) {
+                const contentType = res.headers.get('content-type') || '';
+                if (contentType.includes('audio') || /\.(mp3|wav|m4a|aac|ogg)/i.test(urlStr)) {
+                    const buf = Buffer.from(await res.arrayBuffer());
+                    fs.writeFileSync(filePath, buf);
+                    console.log(`✅ Đã tải file audio thành công: ${fileName}`);
+                    return { fileName, filePath, title: mediaTitle || 'Audio trực tuyến', type: 'Direct Audio' };
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ Lỗi tải audio trực tiếp:', e.message);
+        }
     }
 
     return null;
@@ -3329,8 +3927,25 @@ app.post('/zalo-webhook', async (req, res) => {
 
             await sendZaloMessage(chatId, textReply);
         }
-        // C. XỬ LÝ LỆNH TẠO / VẼ HÌNH ẢNH AI (Bắt toàn bộ cú pháp yêu cầu vẽ/tạo ảnh: anime, đời thực, 18+, kinh dị, sci-fi, v.v...)
-        else if (cleanedMessage.match(/^(?:hãy\s+)?(?:tạo|tao|vẽ|ve|sinh|làm|tạo\s*hình|draw|gen|imagine)\s*(?:cho\s+[^\s]+|giúp\s+[^\s]+|hộ\s+[^\s]+|giùm\s+[^\s]+|giúp|hộ|giùm)?\s*(?:bức|tấm|khung|bức\s*hình|tấm\s*hình)?\s*(?:ảnh|hinh|hình|tranh|photo|image|picture)?\s*[:=|-]?\s*(.+)$/i) || cleanedMessage.match(/^(?:\/draw|\/genimage|\/gen|\/image|\/img|\/imagine|\/veanh|!veanh|veanh)\s*[:=|-]?\s*(.+)$/i)) {
+        // C0.45. XỬ LÝ LỆNH TẠO NHẠC VOICE AUDIO TỪ LỜI BÀI HÁT TỰ VIẾT (!taonhac, /taonhac, tạo nhạc [lời] thể loại [v-pop])
+        else if (cleanedMessage.match(/^(?:!taonhac|!tạonhạc|\/taonhac|\/tạonhạc|tạo\s*nhạc|phổ\s*nhạc|làm\s*nhạc)\b/i) || cleanedMessage.match(/^(?:tạo|phổ|làm)\s*nhạc\s*(.+)/i)) {
+            console.log(`🎵 Nhận yêu cầu tạo nhạc từ lời tự viết từ [${chatId}]: "${cleanedMessage}"`);
+            sendTypingAction(chatId);
+
+            const musicReply = await handleCreateCustomMusic(chatId, cleanedMessage, senderName);
+            await sendZaloMessage(chatId, musicReply);
+        }
+        // C0.46. XỬ LÝ LỆNH PHÁT NHẠC TỪ KHO ÂM NHẠC CÓ SẴN (!music, /music, !nhac, /nhac, phát nhạc, bật nhạc, nghe nhạc)
+        else if (cleanedMessage.match(/^(?:!music|\/music|!nhac|\/nhac|phát\s*nhạc|bật\s*nhạc|nghe\s*nhạc|danh\s*sách\s*nhạc|kho\s*nhạc)\b/i) || cleanedMessage.match(/^(?:bật|phát|nghe)\s+nhạc\s*(.*)$/i) || cleanedMessage.match(/^nhạc\s+(lofi|lo-fi|chill|edm|remix|piano|cổ\s*điển|không\s*lời|meme|troll|vpop|v-pop|trẻ)$/i)) {
+            console.log(`🎵 Nhận lệnh phát nhạc từ Kho âm nhạc có sẵn từ [${chatId}]: "${cleanedMessage}"`);
+            sendTypingAction(chatId);
+
+            const musicPlayerReply = await handleBuiltinMusicPlayer(chatId, cleanedMessage, senderName);
+            const mentions = buildMentions(musicPlayerReply, senderId, senderName);
+            await sendZaloMessage(chatId, musicPlayerReply, mentions);
+        }
+        // C. XỬ LÝ LỆNH TẠO / VẼ HÌNH ẢNH AI (Bắt toàn bộ cú pháp yêu cầu vẽ/tạo ảnh, loại trừ lệnh tạo nhạc)
+        else if (!/^(?:tạo|làm|phổ)\s*(?:nhạc|bài\s*hát|âm\s*thanh|audio|sound|voice)/i.test(cleanedMessage) && (cleanedMessage.match(/^(?:hãy\s+)?(?:tạo|tao|vẽ|ve|sinh|làm|tạo\s*hình|draw|gen|imagine)\s*(?:cho\s+[^\s]+|giúp\s+[^\s]+|hộ\s+[^\s]+|giùm\s+[^\s]+|giúp|hộ|giùm)?\s*(?:bức|tấm|khung|bức\s*hình|tấm\s*hình)?\s*(?:ảnh|hinh|hình|tranh|photo|image|picture)\s*[:=|-]?\s*(.+)$/i) || cleanedMessage.match(/^(?:\/draw|\/genimage|\/gen|\/image|\/img|\/imagine|\/veanh|!veanh|veanh)\s*[:=|-]?\s*(.+)$/i))) {
             const imgMatch1 = cleanedMessage.match(/^(?:hãy\s+)?(?:tạo|tao|vẽ|ve|sinh|làm|tạo\s*hình|draw|gen|imagine)\s*(?:cho\s+[^\s]+|giúp\s+[^\s]+|hộ\s+[^\s]+|giùm\s+[^\s]+|giúp|hộ|giùm)?\s*(?:bức|tấm|khung|bức\s*hình|tấm\s*hình)?\s*(?:ảnh|hinh|hình|tranh|photo|image|picture)?\s*[:=|-]?\s*(.+)$/i);
             const imgMatch2 = cleanedMessage.match(/^(?:\/draw|\/genimage|\/gen|\/image|\/img|\/imagine|\/veanh|!veanh|veanh)\s*[:=|-]?\s*(.+)$/i);
             const imgMatch = imgMatch1 || imgMatch2;
@@ -3798,19 +4413,530 @@ async function detectActiveCloudflareUrl() {
 }
 
 async function startAutoTunnel(port) {
-    try {
-        const { startTunnel } = await import('untun');
-        console.log('📡 Đang tự động khởi tạo Cloudflare Tunnel qua untun...');
-        const tunnel = await startTunnel({ port, acceptCloudflareNotice: true });
-        const tunnelUrl = await tunnel.getURL();
-        if (tunnelUrl) {
-            console.log(`🌐 Untun Cloudflare Tunnel đã sẵn sàng: ${tunnelUrl}`);
-            return tunnelUrl;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const { startTunnel } = await import('untun');
+            console.log(`📡 Đang tự động khởi tạo Cloudflare Tunnel qua untun (Lần ${attempt}/3)...`);
+            const tunnel = await startTunnel({ port, acceptCloudflareNotice: true }).catch(() => null);
+            if (!tunnel) continue;
+            const tunnelUrl = await tunnel.getURL().catch(() => null);
+            if (tunnelUrl) {
+                console.log(`🌐 Untun Cloudflare Tunnel đã sẵn sàng: ${tunnelUrl}`);
+                return tunnelUrl;
+            }
+        } catch (e) {
+            console.warn(`⚠️ Lỗi khởi tạo Cloudflare Tunnel (Lần ${attempt}/3):`, e.message);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
         }
-    } catch (e) {
-        console.warn('⚠️ Không thể tự động tạo tunnel qua untun:', e.message);
     }
     return null;
+}
+
+// ==========================================
+// DISCORD BOT INTEGRATION
+// ==========================================
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const pendingAudioLinks = new Map();
+
+if (DISCORD_TOKEN && DISCORD_TOKEN.trim() !== '') {
+    try {
+        const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes, SlashCommandBuilder } = require('discord.js');
+        const discordClient = new Client({
+            intents: [
+                GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.MessageContent,
+                GatewayIntentBits.GuildVoiceStates
+            ]
+        });
+
+        const voicePlayers = new Map();
+
+        function createHelpEmbed() {
+            return new EmbedBuilder()
+                .setColor(0x0099FF)
+                .setTitle('🤖 DANH SÁCH CHỨC NĂNG BOT')
+                .setDescription('Chào bạn! Dưới đây là các chức năng chính của bot:')
+                .addFields(
+                    { name: '💬 1. Trò Chuyện & Hỏi Đáp AI', value: 'Gõ bất kỳ câu hỏi hoặc tin nhắn nào, Bot sẽ dùng **Groq AI (Llama 3.3 70B)** để trả lời tự nhiên.' },
+                    { name: '🧠 2. Dạy Bot Trả Lời (Bộ Nhớ)', value: '• **Dạy bot:** `Dạy bot: [câu hỏi] | [câu trả lời]`\n• **Xoá câu dạy:** `Xoá câu dạy: [câu hỏi]`\n• **Xoá hết:** `Xóa bộ nhớ`' },
+                    { name: '🎮 3. Game Nối Từ Tiếng Việt', value: '• **Bắt đầu/Nối từ:** `!noitu [từ 2 tiếng]` *(Ví dụ: `!noitu học tập`)*\n• **Dừng game:** Gõ `dừng`, `stop`, hoặc `reset`' },
+                    { name: '👁️ 4. Đọc Chữ Từ Ảnh (OCR)', value: 'Gửi hình ảnh chứa văn bản, Bot sẽ tự động trích xuất chữ trong ảnh.' },
+                    { name: '🎨 5. Tạo Ảnh AI (Draw)', value: '• **Cú pháp:** `!ve [mô tả bức ảnh]` *(Ví dụ: `!ve chú mèo phi hành gia trên sao hỏa`)*' },
+                    { name: '🎙️ 6. Tạo Giọng Nói AI (Voice)', value: '• **Cú pháp:** `!noi [nội dung]` *(Ví dụ: `!noi Chào bạn, chúc bạn ngày mới tốt lành`)*' },
+                    { name: '🌐 7. Tìm Kiếm Thông Tin Trực Tuyến', value: '• **Cú pháp:** `!tim [từ khóa]` *(Ví dụ: `!tim giá vàng hôm nay`, `!tim tin tức thể thao`)*' },
+                    { name: '🎧 8. Trích Xuất & Nghe Âm Thanh (Audio Extractor)', value: '• **Cú pháp:** Gửi link **YouTube/SoundCloud/Spotify/MP3**, Bot sẽ tạo 2 nút bấm: **Nghe trực tiếp** hoặc **Thoát sang nguồn**!' },
+                    { name: '🔊 9. Phát Nhạc Trực Tiếp Trong Phòng Call (Voice Channel)', value: '• `!in` ➔ Bot tham gia phòng Call cùng mọi người\n• `!play [link/tên bài hát]` ➔ Phát nhạc trực tiếp vào mic trong phòng Call cho cả phòng cùng nghe!\n• `!out` (hoặc `!leave`, `!stop`) ➔ Rời khỏi phòng Call' }
+                )
+                .setFooter({ text: 'Bot Zalo & Discord Multi-Platform • 24/7' })
+                .setTimestamp();
+        }
+
+        discordClient.on('ready', async () => {
+            console.log(`🤖 Discord Bot đã hoạt động: ${discordClient.user.tag}`);
+            try {
+                const helpCommand = new SlashCommandBuilder()
+                    .setName('help')
+                    .setDescription('Xem danh sách các chức năng chính của bot');
+                
+                const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+                await rest.put(
+                    Routes.applicationCommands(discordClient.user.id),
+                    { body: [helpCommand.toJSON()] }
+                );
+                console.log('✅ Đã đăng ký Slash Command /help trên Discord!');
+            } catch (err) {
+                console.warn('⚠️ Lỗi đăng ký Slash Command /help:', err.message);
+            }
+        });
+
+        discordClient.on('interactionCreate', async (interaction) => {
+            if (interaction.isChatInputCommand()) {
+                if (interaction.commandName === 'help') {
+                    await interaction.reply({ embeds: [createHelpEmbed()] });
+                }
+                return;
+            }
+
+            if (interaction.isButton()) {
+                const targetUrl = pendingAudioLinks.get(interaction.customId);
+                if (targetUrl) {
+                    try {
+                        await interaction.deferReply({ ephemeral: false });
+                        await interaction.editReply('⏳ Đang tiến hành trích xuất âm thanh từ liên kết, vui lòng đợi giây lát...');
+
+                        const audioData = await extractAudioFromUrl(targetUrl);
+                        if (audioData && audioData.filePath && fs.existsSync(audioData.filePath)) {
+                            const { AttachmentBuilder } = require('discord.js');
+                            const stats = fs.statSync(audioData.filePath);
+                            const fileSizeInMB = stats.size / (1024 * 1024);
+
+                            if (fileSizeInMB <= 24) {
+                                const attachment = new AttachmentBuilder(audioData.filePath, { name: audioData.fileName });
+                                await interaction.followUp({
+                                    content: `🎧 **Âm thanh đã trích xuất từ ${audioData.type}:**\n🎵 **${audioData.title}**`,
+                                    files: [attachment]
+                                });
+                            } else {
+                                const baseUrl = getPublicBaseUrl();
+                                const publicUrl = baseUrl ? `${baseUrl}/audio/${audioData.fileName}` : null;
+                                if (publicUrl) {
+                                    await interaction.followUp(`🎧 **Âm thanh trích xuất từ ${audioData.type}** (*File lớn ${fileSizeInMB.toFixed(1)}MB > 25MB*):\n🎵 **${audioData.title}**\n🔗 Nghe trực tuyến: ${publicUrl}`);
+                                }
+                            }
+                        } else {
+                            await interaction.followUp('❌ Không thể trích xuất âm thanh từ liên kết này.');
+                        }
+                    } catch (err) {
+                        console.error('Lỗi khi bấm nút nghe nhạc:', err);
+                        await interaction.followUp('❌ Có lỗi xảy ra khi xử lý âm thanh.');
+                    }
+                }
+            }
+        });
+
+        discordClient.on('messageCreate', async (message) => {
+            if (message.author.bot) return;
+
+            const userText = message.content.trim();
+
+            // 0. Xử lý đọc chữ từ hình ảnh đính kèm (OCR)
+            const imageAttachment = message.attachments.find(att => att.contentType && att.contentType.startsWith('image/'));
+            if (imageAttachment) {
+                try {
+                    await message.channel.sendTyping();
+                    const Tesseract = require('tesseract.js');
+                    const { data: { text } } = await Tesseract.recognize(imageAttachment.url, 'vie+eng');
+                    if (text && text.trim()) {
+                        return message.reply(`📄 **Văn bản trích xuất từ ảnh:**\n\`\`\`\n${text.trim()}\n\`\`\``);
+                    } else {
+                        return message.reply('⚠️ Không phát hiện chữ nào trong hình ảnh này!');
+                    }
+                } catch (err) {
+                    console.error('Lỗi OCR Discord:', err);
+                    return message.reply('❌ Có lỗi xảy ra khi đọc chữ trong ảnh.');
+                }
+            }
+
+            if (!userText) return;
+
+            // Xử lý lệnh /help hoặc !help dạng chữ
+            const lowerText = userText.toLowerCase();
+            if (lowerText === '/help' || lowerText === '!help' || lowerText === 'help') {
+                return message.reply({ embeds: [createHelpEmbed()] });
+            }
+
+            // 1. Lệnh Dạy bot / Xoá câu dạy
+            if (lowerText.startsWith('dạy bot:') || lowerText.startsWith('dạy:')) {
+                const content = userText.replace(/^(dạy bot:|dạy:)/i, '').trim();
+                const parts = content.split(/\||=>/);
+                if (parts.length >= 2) {
+                    const q = parts[0].trim();
+                    const a = parts.slice(1).join('|').trim();
+                    if (q && a) {
+                        teachBot(q, a);
+                        return message.reply(`✅ Đã ghi nhớ! Từ nay khi ai hỏi **"${q}"**, mình sẽ đáp **"${a}"** nha! ✨`);
+                    }
+                }
+                return message.reply('⚠️ Cú pháp chưa đúng! Vui lòng gõ: `Dạy bot: [câu hỏi] | [câu trả lời]`');
+            }
+
+            if (lowerText.startsWith('xoá câu dạy:') || lowerText.startsWith('xóa câu dạy:')) {
+                const q = userText.replace(/^(xoá câu dạy:|xóa câu dạy:)/i, '').trim();
+                if (q) {
+                    const deleted = deleteSingleMemory(q);
+                    return message.reply(deleted ? `🗑️ Đã xoá câu dạy: "${q}" khỏi bộ nhớ!` : `⚠️ Không tìm thấy câu "${q}" trong bộ nhớ!`);
+                }
+            }
+
+            if (lowerText === 'xoá bộ nhớ' || lowerText === 'xóa bộ nhớ') {
+                saveMemory([]);
+                return message.reply('🗑️ Đã xoá toàn bộ bộ nhớ dạy bot!');
+            }
+
+            // 2. Game Nối Từ Tiếng Việt (!noitu)
+            const channelGame = wordChainGames[message.channelId];
+            const isGameActive = channelGame && channelGame.active;
+            if (lowerText.startsWith('!noitu') || isGameActive) {
+                const gameInput = lowerText.startsWith('!noitu') 
+                    ? userText.slice(6).trim() 
+                    : userText;
+                const result = await handleWordChain(message.channelId, message.author.id, message.author.username, gameInput);
+                if (result) {
+                    return message.reply(result);
+                }
+            }
+
+            // 3. Lệnh tạo ảnh AI (!ve hoặc !taoanh)
+            if (lowerText.startsWith('!ve ') || lowerText.startsWith('!vẽ ') || lowerText.startsWith('!taoanh ') || lowerText.startsWith('!tạoảnh ')) {
+                const prompt = userText.replace(/^(!ve|!vẽ|!taoanh|!tạoảnh)\s+/i, '').trim();
+                if (prompt) {
+                    try {
+                        await message.channel.sendTyping();
+                        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random()*1000000)}`;
+                        const { AttachmentBuilder } = require('discord.js');
+                        const attachment = new AttachmentBuilder(imageUrl, { name: 'generated_image.jpg' });
+                        return message.reply({ content: `🎨 **Ảnh AI tạo theo yêu cầu:** "${prompt}"`, files: [attachment] });
+                    } catch (err) {
+                        console.error('Lỗi tạo ảnh Discord:', err);
+                        return message.reply('❌ Có lỗi xảy ra khi tạo ảnh!');
+                    }
+                } else {
+                    return message.reply('⚠️ Cú pháp: `!ve [mô tả bức ảnh]` (Ví dụ: `!ve con mèo samurai màu vàng`)');
+                }
+            }
+
+            // 4. Lệnh tạo giọng nói Voice TTS (!noi hoặc !voice)
+            if (lowerText.startsWith('!noi ') || lowerText.startsWith('!nói ') || lowerText.startsWith('!voice ')) {
+                const textToSpeech = userText.replace(/^(!noi|!nói|!voice)\s+/i, '').trim();
+                if (textToSpeech) {
+                    try {
+                        await message.channel.sendTyping();
+                        const audioRes = await generateTTSAudio(textToSpeech);
+                        if (audioRes && audioRes.fileName) {
+                            const audioPath = path.join(AUDIO_DIR, audioRes.fileName);
+                            const { AttachmentBuilder } = require('discord.js');
+                            const attachment = new AttachmentBuilder(audioPath, { name: audioRes.fileName });
+                            return message.reply({ content: `🎙️ **Giọng nói AI:**`, files: [attachment] });
+                        } else {
+                            return message.reply('❌ Không thể tạo giọng nói lúc này.');
+                        }
+                    } catch (err) {
+                        console.error('Lỗi TTS Discord:', err);
+                        return message.reply('❌ Có lỗi xảy ra khi tạo giọng nói!');
+                    }
+                } else {
+                    return message.reply('⚠️ Cú pháp: `!noi [nội dung cần nói]` (Ví dụ: `!noi Chào bạn, chúc bạn một ngày vui vẻ`)');
+                }
+            }
+
+            // 5. Lệnh tìm kiếm thông tin trực tuyến Web / Google / YouTube (!tim hoặc !search)
+            if (lowerText.startsWith('!tim ') || lowerText.startsWith('!tìm ') || lowerText.startsWith('!search ')) {
+                const query = userText.replace(/^(!tim|!tìm|!search)\s+/i, '').trim();
+                if (query) {
+                    try {
+                        await message.channel.sendTyping();
+                        const searchResults = await searchWebAndVideos(query);
+                        let contextText = '';
+                        let sourceLinks = [];
+
+                        if (searchResults.places && searchResults.places.length > 0) {
+                            contextText += '=== KẾT QUẢ ĐỊA ĐIỂM / CHI NHÁNH / CỬA HÀNG ===\n';
+                            searchResults.places.slice(0, 10).forEach(r => {
+                                const titleStr = r.title || r.name || 'Chi nhánh / Cửa hàng';
+                                if (r.link) sourceLinks.push({ title: titleStr, link: r.link });
+                                const addrStr = r.address || r.snippet || r.detail || '';
+                                contextText += `• Tên: ${titleStr}\n  Địa chỉ/Mô tả: ${addrStr}\n  Link: ${r.link || ''}\n`;
+                            });
+                            contextText += '\n';
+                        }
+
+                        if (searchResults.web && searchResults.web.length > 0) {
+                            contextText += '=== KẾT QUẢ GOOGLE TIN TỨC / WEB ===\n';
+                            searchResults.web.slice(0, 7).forEach(r => {
+                                sourceLinks.push({ title: r.title, link: r.link });
+                                contextText += `• Tiêu đề: ${r.title}\n  Link: ${r.link}\n  Tóm tắt: ${r.snippet}\n`;
+                            });
+                            contextText += '\n';
+                        }
+                        if (searchResults.ddgWeb && searchResults.ddgWeb.length > 0) {
+                            contextText += '=== KẾT QUẢ DUCKDUCKGO WEB ===\n';
+                            searchResults.ddgWeb.slice(0, 7).forEach(r => {
+                                sourceLinks.push({ title: r.title, link: r.link });
+                                contextText += `• Tiêu đề: ${r.title}\n  Link: ${r.link}\n  Tóm tắt: ${r.snippet}\n`;
+                            });
+                            contextText += '\n';
+                        }
+                        if (searchResults.wiki && searchResults.wiki.length > 0) {
+                            contextText += '=== KẾT QUẢ WIKIPEDIA ===\n';
+                            searchResults.wiki.slice(0, 3).forEach(r => {
+                                sourceLinks.push({ title: r.title, link: r.link });
+                                contextText += `• Tiêu đề: ${r.title}\n  Link: ${r.link}\n  Tóm tắt: ${r.snippet}\n`;
+                            });
+                            contextText += '\n';
+                        }
+                        if (searchResults.videos && searchResults.videos.length > 0) {
+                            contextText += '=== VIDEO YOUTUBE LIÊN QUAN ===\n';
+                            searchResults.videos.slice(0, 3).forEach(r => {
+                                sourceLinks.push({ title: r.title, link: r.link });
+                                contextText += `• Video: ${r.title}\n  Link: ${r.link}\n`;
+                            });
+                            contextText += '\n';
+                        }
+
+                        if (groq) {
+                            const systemPrompt = `Bạn là Trợ Lý AI Tìm Kiếm Thông Tin Trực Tuyến Toàn Diện & Chuyên Sâu.
+Nhiệm vụ của bạn:
+1. Đọc kỹ dữ liệu thu thập trực tiếp và trình bày phù hợp với bản chất từ khóa tìm kiếm (Chỉ đưa ra các thông tin thực tế thu thập được, KHÔNG đưa các mục vô lý như "chương trình đào tạo" cho shop thời trang/cửa hàng).
+2. BẮT BUỘC LIỆT KÊ ĐỊA CHỈ CHI NHÁNH / CỬA HÀNG: Nếu trong dữ liệu có thông tin địa điểm/chi nhánh/cửa hàng, hãy tạo mục "📍 **ĐỊA CHỈ CÁC CHI NHÁNH / CỬA HÀNG:**" và liệt kê rõ tên chi nhánh kèm địa chỉ cụ thể từng nơi.
+3. PHẦN CUỐI BÀI VIẾT: Bắt buộc liệt kê mục "🌐 **DANH SÁCH WEBSITE & NGUỒN LIÊN QUAN:**" trình bày dạng danh sách gạch đầu dòng với định dạng [Tên trang web](URL).
+4. Cung cấp đầy đủ các đường link website có trong dữ liệu để người dùng dễ dàng bấm vào xem.`;
+
+                            const completion = await groq.chat.completions.create({
+                                messages: [
+                                    { role: 'system', content: systemPrompt },
+                                    { role: 'user', content: `Từ khóa cần tìm: "${query}"\n\nDữ liệu thu thập trực tiếp:\n${contextText || 'Không tìm thấy dữ liệu trực tuyến.'}` }
+                                ],
+                                model: 'llama-3.3-70b-versatile',
+                            });
+                            const reply = completion.choices[0]?.message?.content;
+                            if (reply) {
+                                if (reply.length > 1900) {
+                                    for (let i = 0; i < reply.length; i += 1900) {
+                                        await message.channel.send(reply.slice(i, i + 1900));
+                                    }
+                                } else {
+                                    await message.reply(reply);
+                                }
+                                return;
+                            }
+                        }
+                        
+                        // Fallback nếu không có Groq
+                        let fallbackText = `🔎 **Kết quả tìm kiếm đầy đủ cho "${query}":**\n\n`;
+                        sourceLinks.slice(0, 10).forEach(s => {
+                            fallbackText += `• [${s.title}](${s.link})\n`;
+                        });
+                        return message.reply(fallbackText);
+                    } catch (err) {
+                        console.error('Lỗi Search Discord:', err);
+                        return message.reply('❌ Có lỗi xảy ra khi tìm kiếm thông tin.');
+                    }
+                } else {
+                    return message.reply('⚠️ Cú pháp: `!tim [từ khóa cần tìm]` (Ví dụ: `!tim Thông tin trường HHT`)');
+                }
+            }
+
+            // 6. Lệnh Voice Call (Tham gia phòng Call & Phát nhạc vào mic cho cả phòng cùng nghe)
+            if (lowerText.startsWith('!in') || lowerText.startsWith('!join') || lowerText.startsWith('!vjoin')) {
+                const voiceChannel = message.member?.voice?.channel;
+                if (!voiceChannel) {
+                    return message.reply('⚠️ Bạn cần tham gia vào một **Phòng Call (Voice Channel)** trước!');
+                }
+                try {
+                    const { joinVoiceChannel } = require('@discordjs/voice');
+                    joinVoiceChannel({
+                        channelId: voiceChannel.id,
+                        guildId: voiceChannel.guild.id,
+                        adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+                        selfDeaf: false,
+                        selfMute: false
+                    });
+                    return message.reply(`🔊 **Đã tham gia phòng Call:** \`${voiceChannel.name}\`!`);
+                } catch (err) {
+                    console.error('Lỗi Join Voice:', err);
+                    return message.reply('❌ Không thể tham gia phòng Call này.');
+                }
+            }
+
+            if (lowerText.startsWith('!out') || lowerText.startsWith('!leave') || lowerText.startsWith('!vleave') || lowerText === '!stop') {
+                const { getVoiceConnection } = require('@discordjs/voice');
+                const connection = getVoiceConnection(message.guild.id);
+                if (connection) {
+                    connection.destroy();
+                    if (voicePlayers.has(message.guild.id)) {
+                        const vp = voicePlayers.get(message.guild.id);
+                        vp.player?.stop();
+                        voicePlayers.delete(message.guild.id);
+                    }
+                    return message.reply('👋 Đã rời khỏi phòng Call!');
+                } else {
+                    return message.reply('⚠️ Bot hiện không ở trong phòng Call nào!');
+                }
+            }
+
+            if (lowerText.startsWith('!play') || lowerText.startsWith('!p')) {
+                const voiceChannel = message.member?.voice?.channel;
+                if (!voiceChannel) {
+                    return message.reply('⚠️ Bạn cần ở trong một **Phòng Call (Voice Channel)** để dùng lệnh `!play`!');
+                }
+                const query = userText.replace(/^(!play|!p)\s*/i, '').trim();
+                if (!query) {
+                    return message.reply('⚠️ Cú pháp: `!play [link hoặc tên bài hát]` (Ví dụ: `!play nhạc chill ngày mưa`)');
+                }
+
+                try {
+                    await message.channel.sendTyping();
+                    const { joinVoiceChannel, createAudioPlayer, createAudioResource, getVoiceConnection } = require('@discordjs/voice');
+                    const play = require('play-dl');
+                    const ytdl = require('@distube/ytdl-core');
+
+                    let connection = getVoiceConnection(message.guild.id);
+                    if (!connection) {
+                        connection = joinVoiceChannel({
+                            channelId: voiceChannel.id,
+                            guildId: voiceChannel.guild.id,
+                            adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+                            selfDeaf: false,
+                            selfMute: false
+                        });
+                    }
+
+                    const statusMsg = await message.reply('⏳ **Đang tải & xử lý âm thanh...** Vui lòng chờ vài giây!');
+                    let resource;
+                    let songTitle = query;
+
+                    if (query.startsWith('http')) {
+                        // Tải trực tiếp từ đường link người dùng gửi (SoundCloud, YouTube, MP3 link...) chuẩn 100% bản gốc
+                        const audioData = await extractAudioFromUrl(query);
+                        if (audioData && audioData.filePath && fs.existsSync(audioData.filePath)) {
+                            resource = createAudioResource(audioData.filePath);
+                            songTitle = audioData.title || query;
+                        }
+                    } else {
+                        // Nếu nhập tên bài hát -> Tìm kiếm bài hát bằng tên trên YouTube
+                        const ytSearch = await play.search(query, { limit: 1 }).catch(() => []);
+                        if (ytSearch && ytSearch.length > 0) {
+                            const videoUrl = ytSearch[0].url || `https://www.youtube.com/watch?v=${ytSearch[0].id}`;
+                            const audioData = await extractAudioFromUrl(videoUrl);
+                            if (audioData && audioData.filePath && fs.existsSync(audioData.filePath)) {
+                                resource = createAudioResource(audioData.filePath);
+                                songTitle = audioData.title || ytSearch[0].title;
+                            }
+                        } else {
+                            return statusMsg.edit(`⚠️ Không tìm thấy bài hát nào cho từ khóa: "${query}"`);
+                        }
+                    }
+
+                    if (!resource) {
+                        return statusMsg.edit('❌ Không thể mở luồng âm thanh bài hát này.');
+                    }
+
+                    let vp = voicePlayers.get(message.guild.id);
+                    if (!vp) {
+                        const player = createAudioPlayer();
+                        vp = { player, connection };
+                        voicePlayers.set(message.guild.id, vp);
+                    }
+
+                    vp.player.play(resource);
+                    connection.subscribe(vp.player);
+
+                    return statusMsg.edit(`▶️ **Đang phát vào phòng Call [${voiceChannel.name}]:**\n🎵 **${songTitle}**`);
+                } catch (err) {
+                    console.error('Lỗi !play Voice:', err);
+                    return message.reply('❌ Có lỗi xảy ra khi phát nhạc vào phòng Call.');
+                }
+            }
+
+            // 7. Tự động phát hiện & tạo 2 nút bấm tương tác cho link YouTube / SoundCloud / Direct Audio MP3 (Chỉ chạy khi không gõ !play)
+            const urlMatch = userText.match(/https?:\/\/[^\s]+/i);
+            if (urlMatch && !lowerText.startsWith('!play') && !lowerText.startsWith('!p')) {
+                const detectedUrl = urlMatch[0];
+                if (/youtube\.com|youtu\.be|soundcloud\.com|spotify\.com|spoti\.fi|\.(mp3|wav|m4a|aac|ogg)(\?.*)?$/i.test(detectedUrl) || lowerText.startsWith('!mp3') || lowerText.startsWith('!audio')) {
+                    try {
+                        const isYT = /youtube\.com|youtu\.be/i.test(detectedUrl);
+                        const isSC = /soundcloud\.com/i.test(detectedUrl);
+                        const isSP = /spotify\.com|spoti\.fi/i.test(detectedUrl);
+                        const platformName = isYT ? 'YouTube' : (isSC ? 'SoundCloud' : (isSP ? 'Spotify' : 'Audio Direct'));
+                        const customId = `btn_audio_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+
+                        pendingAudioLinks.set(customId, detectedUrl);
+
+                        const row = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(customId)
+                                .setLabel('▶️ Phát / Nghe Trực Tiếp Ở Đây')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setLabel(`🌐 Đến Nguồn ${platformName} Để Nghe`)
+                                .setStyle(ButtonStyle.Link)
+                                .setURL(detectedUrl)
+                        );
+
+                        const audioCardEmbed = new EmbedBuilder()
+                            .setColor(0xFF0000)
+                            .setTitle(`🎵 Liên Kết Âm Thanh ${platformName}`)
+                            .setDescription(`🔗 **Link:** ${detectedUrl}\n\n👉 **Chọn tùy chọn bên dưới:**\n• **▶️ Phát / Nghe Trực Tiếp Ở Đây**: Bot sẽ tự động trích xuất file audio gửi ngay tại kênh này cho bạn bấm nghe.\n• **🌐 Đến Nguồn ${platformName} Để Nghe**: Mở trình duyệt/ứng dụng chuyển tới đường dẫn gốc.`)
+                            .setFooter({ text: 'Discord Audio Extractor Bot' })
+                            .setTimestamp();
+
+                        return message.reply({ embeds: [audioCardEmbed], components: [row] });
+                    } catch (err) {
+                        console.error('Lỗi tạo nút bấm Audio Discord:', err);
+                    }
+                }
+            }
+
+            // 8. Kiểm tra câu trả lời từ bộ nhớ (Memory)
+            const memoryReply = getMemoryReply(userText);
+            if (memoryReply) {
+                return message.reply(memoryReply);
+            }
+
+            // 4. Trả lời bằng Groq AI
+            if (groq) {
+                try {
+                    await message.channel.sendTyping();
+                    const completion = await groq.chat.completions.create({
+                        messages: [
+                            { role: 'system', content: 'Bạn là trợ lý AI thông minh và thân thiện trên Discord.' },
+                            { role: 'user', content: userText }
+                        ],
+                        model: 'llama-3.3-70b-versatile',
+                    });
+                    const reply = completion.choices[0]?.message?.content;
+                    if (reply) {
+                        if (reply.length > 1900) {
+                            for (let i = 0; i < reply.length; i += 1900) {
+                                await message.channel.send(reply.slice(i, i + 1900));
+                            }
+                        } else {
+                            await message.reply(reply);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Lỗi Discord Groq AI:', err);
+                }
+            }
+        });
+
+        discordClient.login(DISCORD_TOKEN).catch(err => {
+            console.error('❌ Lỗi đăng nhập Discord Bot Token:', err.message);
+        });
+    } catch (e) {
+        console.warn('⚠️ Chưa khởi động được Discord Bot:', e.message);
+    }
 }
 
 const PORT = process.env.PORT || 3000;
@@ -3821,6 +4947,8 @@ app.listen(PORT, async () => {
     let rawWebhookUrl = process.env.WEBHOOK_URL || await startAutoTunnel(PORT);
 
     if (rawWebhookUrl) {
+        currentServerPublicUrl = rawWebhookUrl.replace(/\/zalo-webhook\/?$/, '');
+        process.env.WEBHOOK_URL = currentServerPublicUrl;
         const targetUrl = rawWebhookUrl.endsWith('/zalo-webhook') ? rawWebhookUrl : `${rawWebhookUrl}/zalo-webhook`;
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {

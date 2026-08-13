@@ -24,3 +24,10 @@ Thumbs.db
 .agents/
 scratch/
 
+# Temporary & Generated files
+*-player-script.js
+appstate.json
+public/audio/*
+!public/audio/.gitkeep
+
+

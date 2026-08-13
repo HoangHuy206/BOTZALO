@@ -107,6 +107,8 @@ function initFbUserBot({ getAIResponse, getMemoryReply, getAIVisionResponse }) {
 
             console.log(`📩 [Messenger Event: ${type}] từ Sender ID [${senderID}] (Thread: ${threadID}) | Nội dung: "${body || ''}"`);
 
+            if (senderID === myUserID) return; // Tránh bot tự trả lời chính mình gây lặp lại
+
             if (type === 'message' || type === 'message_reply') {
                 const userText = (body || '').trim();
                 const hasPhoto = attachments && attachments.length > 0 && attachments.some(a => a.type === 'photo');
